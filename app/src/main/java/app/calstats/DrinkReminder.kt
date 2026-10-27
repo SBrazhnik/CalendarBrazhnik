@@ -148,6 +148,7 @@ class DrinkReminderReceiver : BroadcastReceiver() {
                     ?: return
                 val drank = intent.getBooleanExtra(DrinkReminder.EXTRA_DRANK, false)
                 SobrietyStore(ctx).set(date, drank)
+                app.calstats.widget.CalendarWidget.refresh(ctx)
                 DrinkReminder.showConfirmation(ctx, drank)
             }
         }

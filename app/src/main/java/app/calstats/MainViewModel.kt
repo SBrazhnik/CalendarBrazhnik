@@ -172,6 +172,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 now = System.currentTimeMillis()
                 today = LocalDate.now()
                 loadedOnce = true
+                app.calstats.widget.CalendarWidget.refresh(getApplication())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -354,6 +355,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** null — снять отметку. */
     fun setDrink(date: LocalDate, drank: Boolean?) {
         drinks = sobrietyStore.set(date, drank)
+        app.calstats.widget.CalendarWidget.refresh(getApplication())
         if (date == today.minusDays(1)) DrinkReminder.cancel(getApplication())
     }
 
