@@ -23,6 +23,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import app.calstats.widget.CalendarWidget
+import app.calstats.widget.TasksWidget
+import app.calstats.work.Issue
+import app.calstats.work.ME
+import app.calstats.work.Status
+import app.calstats.work.WorkOps
+import app.calstats.work.WorkStore
+import app.calstats.work.Workspace
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -57,7 +65,7 @@ sealed interface Screen {
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = CalendarRepository(app)
     private val store = DataStore(app)
-    private val workStore = app.calstats.work.WorkStore(app)
+    private val workStore = WorkStore(app)
     private val sobrietyStore = SobrietyStore(app)
     private val resolver = app.contentResolver
 
@@ -193,7 +201,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 now = System.currentTimeMillis()
                 today = LocalDate.now()
                 loadedOnce = true
-                app.calstats.widget.CalendarWidget.refresh(getApplication())
+                CalendarWidget.refresh(getApplication())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -341,12 +349,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- задачи, проекты, люди, расходы ----------
 
     /** Любое изменение рабочего пространства: сохраняем в файл и обновляем виджеты. */
-    fun updateWork(transform: (app.calstats.work.Workspace) -> app.calstats.work.Workspace) {
+    fun updateWork(transform: (Workspace) -> Workspace) {
         val w = transform(work)
         work = w
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { workStore.save(w) }
-            app.calstats.widget.TasksWidget.refresh(getApplication())
+            TasksWidget.refresh(getApplication())
         }
     }
 
@@ -355,13 +363,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Мои незакрытые задачи со сроком — для календаря. */
-    fun myIssuesByDue(): Map<LocalDate, List<app.calstats.work.Issue>> =
-        work.issues.filter { it.assigneeId == app.calstats.work.ME && it.dueDate != null }.groupBy { it.dueDate!! }
+    fun myIssuesByDue(): Map<LocalDate, List<Issue>> =
+        work.issues.filter { it.assigneeId == ME && it.dueDate != null }.groupBy { it.dueDate!! }
 
-    fun toggleIssueDone(i: app.calstats.work.Issue) = updateWork {
-        app.calstats.work.WorkOps.setStatus(
+    fun toggleIssueDone(i: Issue) = updateWork {
+        WorkOps.setStatus(
             it, i.id,
-            if (i.status == app.calstats.work.Status.DONE) app.calstats.work.Status.TODO else app.calstats.work.Status.DONE,
+            if (i.status == Status.DONE) Status.TODO else Status.DONE,
         )
     }
 
@@ -370,7 +378,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** null — снять отметку. */
     fun setDrink(date: LocalDate, drank: Boolean?) {
         drinks = sobrietyStore.set(date, drank)
-        app.calstats.widget.CalendarWidget.refresh(getApplication())
+        CalendarWidget.refresh(getApplication())
         if (date == today.minusDays(1)) DrinkReminder.cancel(getApplication())
     }
 
@@ -408,7 +416,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val json = DataStore.toJson(data)
-                json.put("work", JSONObject(app.calstats.work.WorkStore.json.encodeToString(app.calstats.work.Workspace.serializer(), work)))
+                json.put("work", JSONObject(WorkStore.json.encodeToString(Workspace.serializer(), work)))
                 json.put("sobriety", sobrietyStore.backupJson())
                 val text = json.toString(2)
                 withContext(Dispatchers.IO) {
@@ -437,7 +445,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val restored = DataStore.fromJson(json)
                 update(restored)
                 val restoredWork = json.optJSONObject("work")?.let {
-                    app.calstats.work.WorkStore.json.decodeFromString(app.calstats.work.Workspace.serializer(), it.toString())
+                    WorkStore.json.decodeFromString(Workspace.serializer(), it.toString())
                 }
                 if (restoredWork != null) updateWork { restoredWork }
                 json.optJSONObject("sobriety")?.let {
