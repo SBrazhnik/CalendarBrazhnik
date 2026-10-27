@@ -81,7 +81,9 @@ fun EditScreen(vm: MainViewModel, screen: Screen.Edit, snackbar: SnackbarHostSta
     var allDay by remember { mutableStateOf(false) }
     var recurring by remember { mutableStateOf(false) }
     val initial = remember {
-        LocalDateTime.now().withMinute(0).withSecond(0).withNano(0).plusHours(1)
+        val nextHour = LocalDateTime.now().withMinute(0).withSecond(0).withNano(0).plusHours(1)
+        val d = screen.presetDate
+        if (d == null || d == nextHour.toLocalDate()) nextHour else d.atTime(9, 0)
     }
     var start by remember { mutableStateOf(initial) }
     var end by remember { mutableStateOf(initial.plusHours(1)) }

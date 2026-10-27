@@ -14,7 +14,7 @@ import app.calstats.ui.AppTheme
 import app.calstats.ui.ColorsScreen
 import app.calstats.ui.DirectionScreen
 import app.calstats.ui.EditScreen
-import app.calstats.ui.MainScreen
+import app.calstats.ui.HomeScreen
 import app.calstats.ui.PermissionScreen
 import app.calstats.ui.SettingsScreen
 
@@ -56,7 +56,7 @@ fun App(vm: MainViewModel) {
     BackHandler(enabled = vm.stack.size > 1) { vm.pop() }
 
     when (val screen = vm.stack.last()) {
-        Screen.Main -> MainScreen(vm, snackbar)
+        Screen.Main -> HomeScreen(vm, snackbar)
         is Screen.Direction -> DirectionScreen(vm, screen.key, snackbar)
         is Screen.Edit -> EditScreen(vm, screen, snackbar)
         Screen.Colors -> ColorsScreen(vm, snackbar)

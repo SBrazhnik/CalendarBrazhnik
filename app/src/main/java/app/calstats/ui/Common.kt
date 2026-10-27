@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -26,6 +27,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -41,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.calstats.Period
 import app.calstats.R
 import app.calstats.PeriodType
@@ -56,6 +60,7 @@ fun AppTheme(content: @Composable () -> Unit) {
             primaryContainer = Color(0xFF5A2516),
             onPrimaryContainer = Color(0xFFFFDBD0),
             secondary = Color(0xFFEEF0F4),
+            onSecondary = Color(0xFF171A33),
             background = Color(0xFF12152A),
             surface = Color(0xFF12152A),
             surfaceVariant = Color(0xFF262A47),
@@ -73,6 +78,7 @@ fun AppTheme(content: @Composable () -> Unit) {
             primaryContainer = Color(0xFFFFDBD0),
             onPrimaryContainer = Color(0xFF3A0B00),
             secondary = Color(0xFF171A33),
+            onSecondary = Color.White,
             background = Color(0xFFF7F7FA),
             surface = Color(0xFFF7F7FA),
             surfaceVariant = Color(0xFFE6E8EF),
@@ -84,7 +90,21 @@ fun AppTheme(content: @Composable () -> Unit) {
             onTertiaryContainer = Color(0xFF171A33),
         )
     }
-    MaterialTheme(colorScheme = scheme, content = content)
+    val shapes = Shapes(
+        extraSmall = RoundedCornerShape(8.dp),
+        small = RoundedCornerShape(12.dp),
+        medium = RoundedCornerShape(20.dp),
+        large = RoundedCornerShape(28.dp),
+        extraLarge = RoundedCornerShape(32.dp),
+    )
+    val base = Typography()
+    val typography = base.copy(
+        headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
+        headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp),
+        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    )
+    MaterialTheme(colorScheme = scheme, shapes = shapes, typography = typography, content = content)
 }
 
 /** Логотип: полный (с надписью) или только знак для шапки. */

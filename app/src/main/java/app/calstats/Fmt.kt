@@ -22,6 +22,45 @@ object Fmt {
         "Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек",
     )
     private val weekDays = arrayOf("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+    private val weekDaysFull = arrayOf("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
+    private val monthsGen = arrayOf(
+        "января", "февраля", "марта", "апреля", "мая", "июня",
+        "июля", "августа", "сентября", "октября", "ноября", "декабря",
+    )
+
+    /** «Вторник, 27 октября» (+ год, если не текущий). */
+    fun dayTitle(d: LocalDate, today: LocalDate = LocalDate.now()): String =
+        "${weekDaysFull[d.dayOfWeek.value - 1]}, ${d.dayOfMonth} ${monthsGen[d.monthValue - 1]}" +
+            if (d.year != today.year) " ${d.year}" else ""
+
+    fun dayOfMillis(ms: Long): LocalDate =
+        java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+
+    fun monthName(month: Int): String = monthsNom[month - 1]
+    fun weekdayShort(i: Int): String = weekDays[i].replaceFirstChar { it.uppercase() }
+
+    /** «Сегодня», «Завтра», «Вчера», «Через 3 дня», «5 дней назад». */
+    fun relativeDay(d: LocalDate, today: LocalDate): String {
+        val n = ChronoUnit.DAYS.between(today, d)
+        return when {
+            n == 0L -> "Сегодня"
+            n == 1L -> "Завтра"
+            n == -1L -> "Вчера"
+            n > 1 -> "Через ${days(n)}"
+            else -> "${days(-n)} назад".replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    /** Срок задачи коротко: «сегодня», «завтра», «пт, 30 окт». */
+    fun dueShort(d: LocalDate, today: LocalDate): String {
+        val n = ChronoUnit.DAYS.between(today, d)
+        return when (n) {
+            0L -> "сегодня"
+            1L -> "завтра"
+            -1L -> "вчера"
+            else -> "${weekDays[d.dayOfWeek.value - 1]}, ${dateNoYear(d)}" + if (d.year != today.year) " ${d.year}" else ""
+        }
+    }
 
     fun plural(n: Long, one: String, few: String, many: String): String {
         val a = (abs(n) % 100).toInt()

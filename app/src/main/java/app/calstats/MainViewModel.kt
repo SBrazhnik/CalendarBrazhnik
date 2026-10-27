@@ -26,6 +26,8 @@ import org.json.JSONObject
 import java.time.LocalDate
 import java.time.ZoneId
 
+enum class Tab(val title: String) { CALENDAR("Календарь"), TASKS("Задачи"), ANALYSIS("Анализ") }
+
 sealed interface Screen {
     data object Main : Screen
     data class Direction(val key: String) : Screen
@@ -34,6 +36,7 @@ sealed interface Screen {
         val instanceBegin: Long? = null,
         val instanceEnd: Long? = null,
         val presetColor: Int? = null,
+        val presetDate: LocalDate? = null,
     ) : Screen
     data object Colors : Screen
     data object Settings : Screen
@@ -42,6 +45,7 @@ sealed interface Screen {
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = CalendarRepository(app)
     private val store = DataStore(app)
+    private val taskStore = TaskStore(app)
     private val resolver = app.contentResolver
 
     val zone: ZoneId get() = ZoneId.systemDefault()
@@ -71,6 +75,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var message by mutableStateOf<String?>(null)
 
     val stack = mutableStateListOf<Screen>(Screen.Main)
+
+    var tab by mutableStateOf(Tab.CALENDAR)
+    var selectedDate by mutableStateOf(LocalDate.now())
+    var tasks by mutableStateOf(taskStore.load())
+        private set
 
     private var observer: ContentObserver? = null
     private var reloadJob: Job? = null
@@ -256,6 +265,63 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------- календарь ----------
+
+    /** Видимые календари — для вкладки «Календарь» (статистика может считать не все). */
+    fun visibleCalendarIds(): Set<Long> = calendars.filter { it.visible }.map { it.id }.toSet()
+
+    /** События по дням (многодневные — в каждом дне). */
+    fun eventsByDay(): Map<LocalDate, List<EventInstance>> {
+        val ids = visibleCalendarIds()
+        val z = zone
+        val map = HashMap<LocalDate, MutableList<EventInstance>>()
+        for (i in instances) {
+            if (i.calendarId !in ids) continue
+            var d = Stats.firstDay(i, z)
+            val last = Stats.lastDay(i, z)
+            var guard = 0
+            while (!d.isAfter(last) && guard < 62) {
+                map.getOrPut(d) { mutableListOf() } += i
+                d = d.plusDays(1)
+                guard++
+            }
+        }
+        return map
+    }
+
+    // ---------- задачи ----------
+
+    private fun saveTasks(list: List<TaskItem>) {
+        tasks = list
+        taskStore.save(list)
+    }
+
+    fun upsertTask(t: TaskItem) {
+        val exists = tasks.any { it.id == t.id }
+        saveTasks(if (exists) tasks.map { if (it.id == t.id) t else it } else tasks + t)
+    }
+
+    fun toggleTask(t: TaskItem) {
+        val done = !t.done
+        upsertTask(t.copy(done = done, doneAt = if (done) System.currentTimeMillis() else null))
+    }
+
+    private var lastDeleted: TaskItem? = null
+
+    fun deleteTask(t: TaskItem) {
+        lastDeleted = t
+        saveTasks(tasks.filter { it.id != t.id })
+    }
+
+    fun undoDeleteTask() {
+        lastDeleted?.let { upsertTask(it) }
+        lastDeleted = null
+    }
+
+    fun clearDoneTasks() = saveTasks(tasks.filter { !it.done })
+
+    fun newTaskId(): Long = System.currentTimeMillis()
+
     // ---------- резервная копия ----------
 
     fun backupFileName(): String = "napravleniya-backup-${LocalDate.now()}.json"
@@ -264,7 +330,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun exportBackup(uri: Uri) {
         viewModelScope.launch {
             try {
-                val text = DataStore.toJson(data).toString(2)
+                val json = DataStore.toJson(data)
+                json.put("tasks", TaskStore.toJson(tasks))
+                val text = json.toString(2)
                 withContext(Dispatchers.IO) {
                     resolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
                         ?: error("файл недоступен")
@@ -290,7 +358,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val restored = DataStore.fromJson(json)
                 update(restored)
-                message = "Восстановлено направлений: ${restored.directions.values.count { it.name.isNotBlank() }}"
+                val restoredTasks = json.optJSONArray("tasks")?.let { TaskStore.fromJson(it) }
+                if (restoredTasks != null) saveTasks(restoredTasks)
+                message = "Восстановлено: направлений ${restored.directions.values.count { it.name.isNotBlank() }}" +
+                    (restoredTasks?.let { ", задач ${it.size}" } ?: "")
             } catch (e: Exception) {
                 message = "Не удалось восстановить: ${e.message}"
             }

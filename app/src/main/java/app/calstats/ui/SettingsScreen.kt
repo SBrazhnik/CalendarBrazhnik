@@ -134,7 +134,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
             Section("Резервная копия") {
                 Text(
                     "Сами события хранятся в Google Календаре: на новом телефоне они появятся после входа " +
-                        "в тот же аккаунт Google. Названия направлений и настройки Android автоматически " +
+                        "в тот же аккаунт Google. Задачи, названия направлений и настройки Android автоматически " +
                         "сохраняет в резервную копию на Google Диске. Дополнительно можно сохранить их в файл.",
                     style = MaterialTheme.typography.bodyMedium,
                 )

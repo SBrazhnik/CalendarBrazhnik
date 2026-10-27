@@ -56,3 +56,15 @@ data class AppData(
     val includeFuture: Boolean = false,
     val lastCalendarKey: String? = null,
 )
+
+/** Задача. Хранится в приложении и входит в резервную копию. */
+data class TaskItem(
+    val id: Long,
+    val title: String,
+    val notes: String = "",
+    val due: java.time.LocalDate? = null,
+    val color: Int? = null,
+    val done: Boolean = false,
+    val doneAt: Long? = null,
+    val created: Long = System.currentTimeMillis(),
+)
