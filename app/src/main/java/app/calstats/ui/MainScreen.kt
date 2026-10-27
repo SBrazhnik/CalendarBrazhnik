@@ -65,9 +65,9 @@ fun MainScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        AppLogo(28.dp)
+                        AppLogo(28.dp, full = false)
                         Spacer(Modifier.width(10.dp))
-                        Text("Направления")
+                        Text("Личный календарь")
                     }
                 },
                 actions = {

@@ -87,11 +87,11 @@ fun AppTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
-/** Логотип приложения (в тёмной теме — светлый вариант). */
+/** Логотип: полный (с надписью) или только знак для шапки. */
 @Composable
-fun AppLogo(size: Dp) {
+fun AppLogo(size: Dp, full: Boolean = true) {
     Image(
-        painter = painterResource(R.drawable.ic_logo),
+        painter = painterResource(if (full) R.drawable.ic_logo else R.drawable.ic_logo_mark),
         contentDescription = null,
         modifier = Modifier.height(size),
     )

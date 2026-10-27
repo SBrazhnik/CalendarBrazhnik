@@ -11,7 +11,7 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="Направления"
+        android:label="Личный календарь"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         tools:targetApi="31">
