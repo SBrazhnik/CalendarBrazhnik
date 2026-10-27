@@ -63,7 +63,13 @@ fun MainScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Направления") },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AppLogo(28.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Направления")
+                    }
+                },
                 actions = {
                     IconButton(onClick = { vm.syncNow() }) { Icon(Icons.Filled.Refresh, "Синхронизировать") }
                     IconButton(onClick = { vm.push(Screen.Colors) }) { Icon(Icons.Filled.Edit, "Названия направлений") }

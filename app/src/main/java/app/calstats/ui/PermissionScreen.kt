@@ -41,6 +41,7 @@ fun PermissionScreen(onGranted: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            AppLogo(104.dp)
             Text("Нужен доступ к календарю", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
             Text(
                 "Приложение считает дни и часы по событиям вашего Google Календаря и добавляет в него новые " +

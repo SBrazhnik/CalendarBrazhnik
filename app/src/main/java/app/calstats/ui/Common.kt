@@ -2,7 +2,7 @@ package app.calstats.ui
 
 import android.app.DatePickerDialog
 import android.content.Context
-import android.os.Build
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,8 +29,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -37,24 +36,65 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.calstats.Period
+import app.calstats.R
 import app.calstats.PeriodType
 import java.time.LocalDate
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
-    val ctx = LocalContext.current
-    val scheme = when {
-        Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-        dark -> darkColorScheme(primary = Color(0xFF7FD3BC), secondary = Color(0xFFF2B84B))
-        else -> lightColorScheme(primary = Color(0xFF1F6F5C), secondary = Color(0xFFB7791F))
+    val scheme = if (dark) {
+        darkColorScheme(
+            primary = Color(0xFFF08A68),
+            onPrimary = Color(0xFF171A33),
+            primaryContainer = Color(0xFF5A2516),
+            onPrimaryContainer = Color(0xFFFFDBD0),
+            secondary = Color(0xFFEEF0F4),
+            background = Color(0xFF12152A),
+            surface = Color(0xFF12152A),
+            surfaceVariant = Color(0xFF262A47),
+            surfaceContainerHighest = Color(0xFF262A47),
+            surfaceContainerHigh = Color(0xFF20243F),
+            surfaceContainer = Color(0xFF1B1F38),
+            surfaceContainerLow = Color(0xFF171A33),
+            tertiaryContainer = Color(0xFF2E3358),
+            onTertiaryContainer = Color(0xFFEEF0F4),
+        )
+    } else {
+        lightColorScheme(
+            primary = Color(0xFFE4572E),
+            onPrimary = Color.White,
+            primaryContainer = Color(0xFFFFDBD0),
+            onPrimaryContainer = Color(0xFF3A0B00),
+            secondary = Color(0xFF171A33),
+            background = Color(0xFFF7F7FA),
+            surface = Color(0xFFF7F7FA),
+            surfaceVariant = Color(0xFFE6E8EF),
+            surfaceContainerHighest = Color(0xFFE6E8EF),
+            surfaceContainerHigh = Color(0xFFECEDF2),
+            surfaceContainer = Color(0xFFF0F1F5),
+            surfaceContainerLow = Color(0xFFF3F4F7),
+            tertiaryContainer = Color(0xFFDDE0F0),
+            onTertiaryContainer = Color(0xFF171A33),
+        )
     }
     MaterialTheme(colorScheme = scheme, content = content)
+}
+
+/** Логотип приложения (в тёмной теме — светлый вариант). */
+@Composable
+fun AppLogo(size: Dp) {
+    Image(
+        painter = painterResource(R.drawable.ic_logo),
+        contentDescription = null,
+        modifier = Modifier.height(size),
+    )
 }
 
 @Composable
