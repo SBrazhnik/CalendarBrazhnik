@@ -26,6 +26,10 @@ import org.json.JSONObject
 import java.time.LocalDate
 import java.time.ZoneId
 
+enum class CalView(val title: String, val days: Int) {
+    SCHEDULE("Расписание", 0), DAY("День", 1), THREE("3 дня", 3), WEEK("Неделя", 7), MONTH("Месяц", 0),
+}
+
 enum class Tab(val title: String) { CALENDAR("Календарь"), TASKS("Задачи"), ANALYSIS("Анализ") }
 
 sealed interface Screen {
@@ -80,6 +84,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val stack = mutableStateListOf<Screen>(Screen.Main)
 
     var tab by mutableStateOf(Tab.CALENDAR)
+    private val uiPrefs = app.getSharedPreferences("calstats_ui", android.content.Context.MODE_PRIVATE)
+    private var calViewState by mutableStateOf(
+        runCatching { CalView.valueOf(uiPrefs.getString("cal_view", null) ?: "MONTH") }.getOrDefault(CalView.MONTH),
+    )
+    var calView: CalView
+        get() = calViewState
+        set(v) {
+            calViewState = v
+            uiPrefs.edit().putString("cal_view", v.name).apply()
+        }
     var selectedDate by mutableStateOf(LocalDate.now())
     var tasks by mutableStateOf(taskStore.load())
         private set
