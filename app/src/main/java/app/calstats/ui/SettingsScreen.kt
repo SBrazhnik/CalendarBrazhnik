@@ -116,7 +116,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                         )
                     }
                     Switch(checked = vm.reminderEnabled, onCheckedChange = {
-                        vm.setReminderEnabled(it)
+                        vm.changeReminderEnabled(it)
                         if (it && !DrinkReminder.canNotify(ctx) && Build.VERSION.SDK_INT >= 33) {
                             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
@@ -125,7 +125,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 if (vm.reminderEnabled) {
                     OutlinedButton(
                         onClick = {
-                            TimePickerDialog(ctx, { _, h, m -> vm.setReminderTime(LocalTime.of(h, m)) },
+                            TimePickerDialog(ctx, { _, h, m -> vm.changeReminderTime(LocalTime.of(h, m)) },
                                 vm.reminderTime.hour, vm.reminderTime.minute, true).show()
                         },
                         modifier = Modifier.fillMaxWidth(),

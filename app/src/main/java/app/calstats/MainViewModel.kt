@@ -339,13 +339,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (date == today.minusDays(1)) DrinkReminder.cancel(getApplication())
     }
 
-    fun setReminderEnabled(v: Boolean) {
+    fun changeReminderEnabled(v: Boolean) {
         sobrietyStore.reminderEnabled = v
         reminderEnabled = v
         DrinkReminder.schedule(getApplication())
     }
 
-    fun setReminderTime(t: java.time.LocalTime) {
+    fun changeReminderTime(t: java.time.LocalTime) {
         sobrietyStore.reminderTime = t
         reminderTime = t
         DrinkReminder.schedule(getApplication())
