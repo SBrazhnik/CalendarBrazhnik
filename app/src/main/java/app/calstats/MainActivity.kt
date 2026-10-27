@@ -61,5 +61,10 @@ fun App(vm: MainViewModel) {
         is Screen.Edit -> EditScreen(vm, screen, snackbar)
         Screen.Colors -> ColorsScreen(vm, snackbar)
         Screen.Settings -> SettingsScreen(vm, snackbar)
+        is Screen.IssueDetail -> app.calstats.ui.IssueScreen(vm, screen.id, snackbar)
+        Screen.People -> app.calstats.ui.PeopleScreen(vm, snackbar)
+        is Screen.ProjectEdit -> app.calstats.ui.ProjectEditScreen(vm, screen.id, snackbar)
+        is Screen.Book -> app.calstats.ui.BookScreen(vm, screen.id, snackbar)
+        is Screen.ExpenseEdit -> app.calstats.ui.ExpenseScreen(vm, screen.bookId, screen.expenseId, snackbar)
     }
 }

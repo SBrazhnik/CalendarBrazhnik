@@ -30,7 +30,7 @@ enum class CalView(val title: String, val days: Int) {
     SCHEDULE("Расписание", 0), DAY("День", 1), THREE("3 дня", 3), WEEK("Неделя", 7), MONTH("Месяц", 0),
 }
 
-enum class Tab(val title: String) { CALENDAR("Календарь"), TASKS("Задачи"), ANALYSIS("Анализ") }
+enum class Tab(val title: String) { CALENDAR("Календарь"), TASKS("Задачи"), MONEY("Расходы"), ANALYSIS("Анализ") }
 
 sealed interface Screen {
     data object Main : Screen
@@ -43,15 +43,21 @@ sealed interface Screen {
         val presetDate: LocalDate? = null,
         val presetStart: java.time.LocalDateTime? = null,
         val presetAllDay: Boolean = false,
+        val presetTitle: String? = null,
     ) : Screen
     data object Colors : Screen
+    data class IssueDetail(val id: String) : Screen
+    data object People : Screen
+    data class ProjectEdit(val id: String?) : Screen
+    data class Book(val id: String) : Screen
+    data class ExpenseEdit(val bookId: String, val expenseId: String?) : Screen
     data object Settings : Screen
 }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = CalendarRepository(app)
     private val store = DataStore(app)
-    private val taskStore = TaskStore(app)
+    private val workStore = app.calstats.work.WorkStore(app)
     private val sobrietyStore = SobrietyStore(app)
     private val resolver = app.contentResolver
 
@@ -95,8 +101,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             uiPrefs.edit().putString("cal_view", v.name).apply()
         }
     var selectedDate by mutableStateOf(LocalDate.now())
-    var tasks by mutableStateOf(taskStore.load())
+    var work by mutableStateOf(workStore.load())
         private set
+    /** Выбранный проект во вкладке «Задачи» (null — все проекты). */
+    var currentProjectId by mutableStateOf<String?>(uiPrefs.getString("project", null))
+        private set
+    fun selectProject(id: String?) {
+        currentProjectId = id
+        uiPrefs.edit().putString("project", id).apply()
+    }
+    var taskView by mutableStateOf(uiPrefs.getString("task_view", "BOARD") ?: "BOARD")
+        private set
+    fun selectTaskView(v: String) {
+        taskView = v
+        uiPrefs.edit().putString("task_view", v).apply()
+    }
+    var onlyMine by mutableStateOf(false)
     var drinks by mutableStateOf(sobrietyStore.load())
         private set
     var reminderEnabled by mutableStateOf(sobrietyStore.reminderEnabled)
@@ -129,6 +149,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onResume() {
         drinks = sobrietyStore.load()
+        work = workStore.load()
         DrinkReminder.schedule(getApplication())
         hasPermission = checkPermission()
         now = System.currentTimeMillis()
@@ -317,38 +338,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return map
     }
 
-    // ---------- задачи ----------
+    // ---------- задачи, проекты, люди, расходы ----------
 
-    private fun saveTasks(list: List<TaskItem>) {
-        tasks = list
-        taskStore.save(list)
+    /** Любое изменение рабочего пространства: сохраняем в файл и обновляем виджеты. */
+    fun updateWork(transform: (app.calstats.work.Workspace) -> app.calstats.work.Workspace) {
+        val w = transform(work)
+        work = w
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { workStore.save(w) }
+            app.calstats.widget.TasksWidget.refresh(getApplication())
+        }
     }
 
-    fun upsertTask(t: TaskItem) {
-        val exists = tasks.any { it.id == t.id }
-        saveTasks(if (exists) tasks.map { if (it.id == t.id) t else it } else tasks + t)
+    fun reloadWork() {
+        work = workStore.load()
     }
 
-    fun toggleTask(t: TaskItem) {
-        val done = !t.done
-        upsertTask(t.copy(done = done, doneAt = if (done) System.currentTimeMillis() else null))
+    /** Мои незакрытые задачи со сроком — для календаря. */
+    fun myIssuesByDue(): Map<LocalDate, List<app.calstats.work.Issue>> =
+        work.issues.filter { it.assigneeId == app.calstats.work.ME && it.dueDate != null }.groupBy { it.dueDate!! }
+
+    fun toggleIssueDone(i: app.calstats.work.Issue) = updateWork {
+        app.calstats.work.WorkOps.setStatus(
+            it, i.id,
+            if (i.status == app.calstats.work.Status.DONE) app.calstats.work.Status.TODO else app.calstats.work.Status.DONE,
+        )
     }
-
-    private var lastDeleted: TaskItem? = null
-
-    fun deleteTask(t: TaskItem) {
-        lastDeleted = t
-        saveTasks(tasks.filter { it.id != t.id })
-    }
-
-    fun undoDeleteTask() {
-        lastDeleted?.let { upsertTask(it) }
-        lastDeleted = null
-    }
-
-    fun clearDoneTasks() = saveTasks(tasks.filter { !it.done })
-
-    fun newTaskId(): Long = System.currentTimeMillis()
 
     // ---------- учёт алкоголя ----------
 
@@ -393,7 +408,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val json = DataStore.toJson(data)
-                json.put("tasks", TaskStore.toJson(tasks))
+                json.put("work", JSONObject(app.calstats.work.WorkStore.json.encodeToString(app.calstats.work.Workspace.serializer(), work)))
                 json.put("sobriety", sobrietyStore.backupJson())
                 val text = json.toString(2)
                 withContext(Dispatchers.IO) {
@@ -421,8 +436,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val restored = DataStore.fromJson(json)
                 update(restored)
-                val restoredTasks = json.optJSONArray("tasks")?.let { TaskStore.fromJson(it) }
-                if (restoredTasks != null) saveTasks(restoredTasks)
+                val restoredWork = json.optJSONObject("work")?.let {
+                    app.calstats.work.WorkStore.json.decodeFromString(app.calstats.work.Workspace.serializer(), it.toString())
+                }
+                if (restoredWork != null) updateWork { restoredWork }
                 json.optJSONObject("sobriety")?.let {
                     sobrietyStore.restore(it)
                     drinks = sobrietyStore.load()
@@ -431,7 +448,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     DrinkReminder.schedule(getApplication())
                 }
                 message = "Восстановлено: направлений ${restored.directions.values.count { it.name.isNotBlank() }}" +
-                    (restoredTasks?.let { ", задач ${it.size}" } ?: "")
+                    (restoredWork?.let { ", задач ${it.issues.size}, расходов ${it.expenses.size}" } ?: "")
             } catch (e: Exception) {
                 message = "Не удалось восстановить: ${e.message}"
             }

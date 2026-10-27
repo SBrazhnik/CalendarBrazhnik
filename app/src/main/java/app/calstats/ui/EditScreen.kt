@@ -93,7 +93,7 @@ fun EditScreen(vm: MainViewModel, screen: Screen.Edit, snackbar: SnackbarHostSta
 
     var loaded by remember { mutableStateOf(isNew) }
     var details by remember { mutableStateOf<EventDetails?>(null) }
-    var title by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf(screen.presetTitle ?: "") }
     var description by remember { mutableStateOf("") }
     var calendar by remember { mutableStateOf<CalendarInfo?>(if (isNew) vm.defaultCalendar() else null) }
     var colorKey by remember { mutableStateOf<String?>(null) }

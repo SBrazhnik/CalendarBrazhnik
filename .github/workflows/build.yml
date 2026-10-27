@@ -26,8 +26,8 @@ jobs:
       - name: Сборка
         run: |
           set -o pipefail
-          gradle assembleRelease --no-daemon 2>&1 | tee build.log || {
-            grep -E "^e: |error:|What went wrong" -A3 build.log | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+          gradle testReleaseUnitTest assembleRelease --no-daemon 2>&1 | tee build.log || {
+            grep -E "^e: |error:|What went wrong|FAILED|AssertionError|expected" -A3 build.log | head -40 | while IFS= read -r line; do echo "::error::$line"; done
             exit 1
           }
 

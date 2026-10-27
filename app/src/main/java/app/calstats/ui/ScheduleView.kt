@@ -36,21 +36,21 @@ import app.calstats.EventInstance
 import app.calstats.Fmt
 import app.calstats.MainViewModel
 import app.calstats.Screen
-import app.calstats.TaskItem
+import app.calstats.work.Issue
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 
 private sealed interface SchedItem {
     data class MonthHeader(val month: YearMonth) : SchedItem
-    data class Day(val date: LocalDate, val events: List<EventInstance>, val tasks: List<TaskItem>) : SchedItem
+    data class Day(val date: LocalDate, val events: List<EventInstance>, val tasks: List<Issue>) : SchedItem
 }
 
 /** «Расписание» как в Google: список дней с событиями, заголовки месяцев, сегодня всегда видно. */
 @Composable
 fun ScheduleView(vm: MainViewModel, byDay: Map<LocalDate, List<EventInstance>>) {
     val today = vm.today
-    val tasksByDay = remember(vm.tasks) { vm.tasks.filter { it.due != null }.groupBy { it.due!! } }
+    val tasksByDay = remember(vm.work) { vm.myIssuesByDue() }
     val items = remember(byDay, tasksByDay, today) {
         val from = today.minusDays(60)
         val dates = (byDay.keys + tasksByDay.keys + today).filter { !it.isBefore(from) }.toSortedSet()
@@ -176,7 +176,7 @@ private fun DayBlock(vm: MainViewModel, item: SchedItem.Day) {
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TaskCheck(t.done, t.color) { vm.toggleTask(t) }
+                    TaskCheck(t.done, t.color) { vm.toggleIssueDone(t) }
                     Spacer(Modifier.width(10.dp))
                     Text(
                         t.title,

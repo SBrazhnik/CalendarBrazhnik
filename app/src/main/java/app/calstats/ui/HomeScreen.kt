@@ -66,6 +66,7 @@ fun HomeScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 when (t) {
                     Tab.CALENDAR -> CalendarTab(vm, snackbar)
                     Tab.TASKS -> TasksTab(vm, snackbar)
+                    Tab.MONEY -> MoneyTab(vm, snackbar)
                     Tab.ANALYSIS -> AnalysisTab(vm, snackbar)
                 }
             }
@@ -78,6 +79,7 @@ private fun TabIcon(t: Tab, selected: Boolean) {
     when (t) {
         Tab.CALENDAR -> Icon(if (selected) Icons.Filled.DateRange else Icons.Outlined.DateRange, null)
         Tab.TASKS -> Icon(if (selected) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle, null)
+        Tab.MONEY -> Icon(painterResource(R.drawable.ic_tab_money), null)
         Tab.ANALYSIS -> Icon(painterResource(R.drawable.ic_tab_stats), null)
     }
 }
