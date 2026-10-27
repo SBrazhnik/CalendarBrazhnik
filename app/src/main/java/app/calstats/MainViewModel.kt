@@ -37,6 +37,8 @@ sealed interface Screen {
         val instanceEnd: Long? = null,
         val presetColor: Int? = null,
         val presetDate: LocalDate? = null,
+        val presetStart: java.time.LocalDateTime? = null,
+        val presetAllDay: Boolean = false,
     ) : Screen
     data object Colors : Screen
     data object Settings : Screen
@@ -230,17 +232,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveEvent(
         existingId: Long?, calendar: CalendarInfo, title: String, description: String,
-        begin: Long, end: Long, allDay: Boolean, colorKey: String?, timeEditable: Boolean,
+        begin: Long, end: Long, allDay: Boolean, colorKey: String?,
+        rrule: String?, reminders: List<Int>,
     ) {
         viewModelScope.launch {
             try {
                 val ok = withContext(Dispatchers.IO) {
                     if (existingId == null) {
-                        repo.insert(calendar.id, title, description, begin, end, allDay, colorKey) != null
-                    } else if (timeEditable) {
-                        repo.update(existingId, title, description, begin, end, allDay, colorKey)
+                        repo.insert(calendar.id, title, description, begin, end, allDay, colorKey, rrule, reminders) != null
                     } else {
-                        repo.update(existingId, title, description, null, null, null, colorKey)
+                        repo.update(existingId, title, description, begin, end, allDay, colorKey, rrule, reminders)
                     }
                 }
                 if (ok) {
@@ -258,10 +259,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun deleteEvent(id: Long, calendar: CalendarInfo?) {
+    /** instanceBegin != null — удалить только это повторение серии. */
+    fun deleteEvent(id: Long, calendar: CalendarInfo?, instanceBegin: Long? = null) {
         viewModelScope.launch {
             try {
-                val ok = withContext(Dispatchers.IO) { repo.delete(id) }
+                val ok = withContext(Dispatchers.IO) {
+                    if (instanceBegin != null) repo.deleteInstance(id, instanceBegin) else repo.delete(id)
+                }
                 message = if (ok) "Событие удалено" else "Не удалось удалить событие"
                 if (ok) {
                     calendar?.let { repo.requestSync(listOf(it)) }

@@ -110,6 +110,7 @@ class CalendarRepository(context: Context) {
             CalendarContract.Events.EVENT_COLOR_KEY,
             CalendarContract.Events.RRULE,
             CalendarContract.Events.RDATE,
+            CalendarContract.Events.DURATION,
         )
         val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id)
         cr.query(uri, projection, null, null, null)?.use { c ->
@@ -124,6 +125,9 @@ class CalendarRepository(context: Context) {
                     allDay = c.getInt(6) == 1,
                     colorKey = c.getString(7)?.takeIf { it.isNotEmpty() },
                     recurring = !c.getString(8).isNullOrEmpty() || !c.getString(9).isNullOrEmpty(),
+                    rrule = c.getString(8)?.takeIf { it.isNotEmpty() },
+                    durationMs = parseDuration(c.getString(10)),
+                    reminders = reminders(id),
                 )
             }
         }
@@ -133,34 +137,29 @@ class CalendarRepository(context: Context) {
     fun insert(
         calendarId: Long, title: String, description: String,
         begin: Long, end: Long, allDay: Boolean, colorKey: String?,
+        rrule: String?, reminders: List<Int>,
     ): Long? {
         val values = ContentValues().apply {
             put(CalendarContract.Events.CALENDAR_ID, calendarId)
             put(CalendarContract.Events.TITLE, title)
             put(CalendarContract.Events.DESCRIPTION, description)
-            put(CalendarContract.Events.DTSTART, begin)
-            put(CalendarContract.Events.DTEND, end)
-            put(CalendarContract.Events.ALL_DAY, if (allDay) 1 else 0)
-            put(CalendarContract.Events.EVENT_TIMEZONE, if (allDay) "UTC" else TimeZone.getDefault().id)
+            putTime(this, begin, end, allDay, rrule)
             if (colorKey != null) put(CalendarContract.Events.EVENT_COLOR_KEY, colorKey)
         }
-        return cr.insert(CalendarContract.Events.CONTENT_URI, values)?.lastPathSegment?.toLongOrNull()
+        val id = cr.insert(CalendarContract.Events.CONTENT_URI, values)?.lastPathSegment?.toLongOrNull() ?: return null
+        setReminders(id, reminders)
+        return id
     }
 
-    /** Для повторяющихся событий время не трогаем — меняется вся серия. */
     fun update(
         id: Long, title: String, description: String,
-        begin: Long?, end: Long?, allDay: Boolean?, colorKey: String?,
+        begin: Long, end: Long, allDay: Boolean, colorKey: String?,
+        rrule: String?, reminders: List<Int>,
     ): Boolean {
         val values = ContentValues().apply {
             put(CalendarContract.Events.TITLE, title)
             put(CalendarContract.Events.DESCRIPTION, description)
-            if (begin != null && end != null && allDay != null) {
-                put(CalendarContract.Events.DTSTART, begin)
-                put(CalendarContract.Events.DTEND, end)
-                put(CalendarContract.Events.ALL_DAY, if (allDay) 1 else 0)
-                put(CalendarContract.Events.EVENT_TIMEZONE, if (allDay) "UTC" else TimeZone.getDefault().id)
-            }
+            putTime(this, begin, end, allDay, rrule)
             if (colorKey != null) {
                 put(CalendarContract.Events.EVENT_COLOR_KEY, colorKey)
             } else {
@@ -169,7 +168,78 @@ class CalendarRepository(context: Context) {
             }
         }
         val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id)
-        return cr.update(uri, values, null, null) > 0
+        val ok = cr.update(uri, values, null, null) > 0
+        if (ok) setReminders(id, reminders)
+        return ok
+    }
+
+    /** Повторяющиеся события хранятся с DURATION вместо DTEND — так требует Android. */
+    private fun putTime(v: ContentValues, begin: Long, end: Long, allDay: Boolean, rrule: String?) {
+        v.put(CalendarContract.Events.DTSTART, begin)
+        v.put(CalendarContract.Events.ALL_DAY, if (allDay) 1 else 0)
+        v.put(CalendarContract.Events.EVENT_TIMEZONE, if (allDay) "UTC" else TimeZone.getDefault().id)
+        if (rrule != null) {
+            v.put(CalendarContract.Events.RRULE, rrule)
+            val dur = if (allDay) "P${((end - begin) / 86_400_000L).coerceAtLeast(1)}D"
+            else "P${((end - begin) / 1000L).coerceAtLeast(0)}S"
+            v.put(CalendarContract.Events.DURATION, dur)
+            v.putNull(CalendarContract.Events.DTEND)
+        } else {
+            v.put(CalendarContract.Events.DTEND, end)
+            v.putNull(CalendarContract.Events.RRULE)
+            v.putNull(CalendarContract.Events.DURATION)
+        }
+    }
+
+    fun reminders(eventId: Long): List<Int> {
+        val out = mutableListOf<Int>()
+        try {
+            cr.query(
+                CalendarContract.Reminders.CONTENT_URI,
+                arrayOf(CalendarContract.Reminders.MINUTES),
+                "${CalendarContract.Reminders.EVENT_ID}=?",
+                arrayOf(eventId.toString()),
+                null,
+            )?.use { c -> while (c.moveToNext()) out += c.getInt(0) }
+        } catch (_: Exception) {
+        }
+        return out.filter { it >= 0 }.distinct().sorted()
+    }
+
+    private fun setReminders(eventId: Long, minutes: List<Int>) {
+        try {
+            cr.delete(
+                CalendarContract.Reminders.CONTENT_URI,
+                "${CalendarContract.Reminders.EVENT_ID}=?",
+                arrayOf(eventId.toString()),
+            )
+            minutes.distinct().forEach { m ->
+                cr.insert(CalendarContract.Reminders.CONTENT_URI, ContentValues().apply {
+                    put(CalendarContract.Reminders.EVENT_ID, eventId)
+                    put(CalendarContract.Reminders.MINUTES, m)
+                    put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+                })
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Удалить только одно повторение серии (как «Только это событие» в Google). */
+    fun deleteInstance(eventId: Long, instanceBegin: Long): Boolean {
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, instanceBegin)
+            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CANCELED)
+        }
+        val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_EXCEPTION_URI, eventId)
+        return cr.insert(uri, values) != null
+    }
+
+    private fun parseDuration(d: String?): Long? {
+        if (d.isNullOrBlank()) return null
+        // RFC 2445: P1D, PT1H30M, P3600S, P1W
+        val m = Regex("""^([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$""").find(d.trim()) ?: return null
+        fun g(i: Int) = m.groupValues[i].toLongOrNull() ?: 0L
+        return ((g(2) * 7 + g(3)) * 86_400L + g(4) * 3600L + g(5) * 60L + g(6)) * 1000L
     }
 
     fun delete(id: Long): Boolean {

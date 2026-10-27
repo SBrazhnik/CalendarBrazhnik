@@ -40,6 +40,9 @@ data class EventDetails(
     val allDay: Boolean,
     val colorKey: String?,
     val recurring: Boolean,
+    val rrule: String? = null,
+    val durationMs: Long? = null,
+    val reminders: List<Int> = emptyList(),
 )
 
 /** Название направления, назначенное цвету. */
