@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Листок календаря со столбиками статистики -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- корпус -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,34h36a4,4 0,0 1,4 4v32a4,4 0,0 1,-4 4h-36a4,4 0,0 1,-4 -4v-32a4,4 0,0 1,4 -4z" />
+    <!-- шапка -->
+    <path
+        android:fillColor="#F2B84B"
+        android:pathData="M36,34h36a4,4 0,0 1,4 4v6h-44v-6a4,4 0,0 1,4 -4z" />
+    <!-- кольца -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,29h4v9h-4zM62,29h4v9h-4z" />
+    <!-- столбики -->
+    <path
+        android:fillColor="#1F6F5C"
+        android:pathData="M40,60h6v9h-6zM49,54h6v15h-6zM58,49h6v20h-6zM67,57h3v12h-3z" />
+</vector>
