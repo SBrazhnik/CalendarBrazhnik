@@ -2,6 +2,7 @@
 
 package app.calstats.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -109,6 +110,9 @@ fun AnalysisTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         }
                     }
                 }
+                if (vm.drinks.isNotEmpty()) {
+                    item { SobrietyCard(vm) }
+                }
                 if (unnamed > 0) {
                     item {
                         Card(
@@ -213,4 +217,75 @@ fun lastText(s: GroupStats, vm: MainViewModel): String {
     val next = s.next ?: return part1
     val nd = Stats.firstDay(next, vm.zone)
     return part1 + "\nСледующее: ${Fmt.dateNoYear(nd)} (${Fmt.ago(nd, vm.today)})"
+}
+
+/** Учёт алкоголя за выбранный период + текущая серия и рекорд. */
+@Composable
+private fun SobrietyCard(vm: MainViewModel) {
+    val summary = remember(vm.drinks, vm.today) { app.calstats.Sobriety.summary(vm.drinks, vm.today) }
+    val counts = remember(vm.drinks, vm.period, vm.today) {
+        val first = vm.drinks.keys.minOrNull() ?: vm.today
+        val start = maxOf(vm.period.start(vm.loadStart), first)
+        val end = minOf(vm.period.endExclusive(vm.loadEnd), vm.today.plusDays(1))
+        var sober = 0
+        var drank = 0
+        var d = start
+        while (d.isBefore(end)) {
+            when (vm.drinks[d]) {
+                true -> drank++
+                false -> sober++
+                null -> {}
+            }
+            d = d.plusDays(1)
+        }
+        Triple(sober, drank, maxOf(0, java.time.temporal.ChronoUnit.DAYS.between(start, end).toInt()) - sober - drank)
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Без алкоголя", style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 6.dp)) {
+                Text(
+                    (summary.streak ?: 0).toString(),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = if ((summary.streak ?: 0) > 0) SOBER_COLOR else DRANK_COLOR,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    Fmt.plural((summary.streak ?: 0).toLong(), "день", "дня", "дней") + " подряд · рекорд ${summary.longest}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 5.dp),
+                )
+            }
+            val total = (counts.first + counts.second).coerceAtLeast(1)
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp))) {
+                if (counts.first > 0) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.weight(counts.first.toFloat() / total).fillMaxSize()
+                            .then(Modifier.background(SOBER_COLOR)),
+                    )
+                }
+                if (counts.second > 0) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.weight(counts.second.toFloat() / total).fillMaxSize()
+                            .then(Modifier.background(DRANK_COLOR)),
+                    )
+                }
+                if (counts.first + counts.second == 0) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.weight(1f).fillMaxSize().then(Modifier.background(MaterialTheme.colorScheme.outlineVariant)),
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth()) {
+                StatBox(counts.first.toString(), "не пил", Modifier.weight(1f))
+                StatBox(counts.second.toString(), "пил", Modifier.weight(1f))
+                StatBox(counts.third.toString(), "без отметки", Modifier.weight(1f))
+            }
+        }
+    }
 }

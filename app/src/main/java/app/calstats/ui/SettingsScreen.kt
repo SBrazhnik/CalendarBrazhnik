@@ -42,12 +42,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import android.Manifest
+import android.app.TimePickerDialog
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.compose.ui.platform.LocalContext
+import app.calstats.DrinkReminder
+import app.calstats.Fmt
+import java.time.LocalTime
 import app.calstats.MainViewModel
 
 @Composable
 fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     var pendingRestore by remember { mutableStateOf<Uri?>(null) }
+    val ctx = LocalContext.current
+    var permTick by remember { mutableStateOf(0) }
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permTick++
+        if (!granted) {
+            ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName)))
+        }
+    }
+    val notifAllowed = remember(permTick, vm.now) { DrinkReminder.canNotify(ctx) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) vm.exportBackup(uri)
@@ -85,6 +103,57 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Button(onClick = { vm.syncNow() }, modifier = Modifier.fillMaxWidth()) { Text("Синхронизировать сейчас") }
+            }
+
+            Section("Учёт алкоголя") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Ежедневный вопрос «Пили вчера?»")
+                        Text(
+                            "Уведомление с кнопками «Не пил» и «Пил» — отвечать можно не открывая приложение.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = vm.reminderEnabled, onCheckedChange = {
+                        vm.setReminderEnabled(it)
+                        if (it && !DrinkReminder.canNotify(ctx) && Build.VERSION.SDK_INT >= 33) {
+                            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    })
+                }
+                if (vm.reminderEnabled) {
+                    OutlinedButton(
+                        onClick = {
+                            TimePickerDialog(ctx, { _, h, m -> vm.setReminderTime(LocalTime.of(h, m)) },
+                                vm.reminderTime.hour, vm.reminderTime.minute, true).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Время напоминания: " + Fmt.time(vm.reminderTime)) }
+                    if (!notifAllowed) {
+                        Text(
+                            "Уведомления для приложения выключены.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(
+                            onClick = {
+                                if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                else ctx.startActivity(
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName)),
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Разрешить уведомления") }
+                    }
+                    TextButton(onClick = { vm.testReminder() }) { Text("Показать уведомление сейчас") }
+                    Text(
+                        "На Samsung, если вопрос не приходит: Настройки → Приложения → Личный календарь → " +
+                            "Батарея → «Без ограничений».",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             Section("Какие календари считать") {

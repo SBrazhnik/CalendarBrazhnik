@@ -1,6 +1,13 @@
 package app.calstats.ui
 
+import android.Manifest
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import app.calstats.DrinkReminder
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -28,6 +35,16 @@ import app.calstats.Tab
 @Composable
 fun HomeScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     BackHandler(enabled = vm.tab != Tab.CALENDAR) { vm.tab = Tab.CALENDAR }
+
+    // Android 13+: один раз просим разрешение на уведомления для ежедневного вопроса.
+    val ctx = LocalContext.current
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33 && vm.reminderEnabled && !DrinkReminder.canNotify(ctx) && !vm.notificationAsked) {
+            vm.notificationAsked = true
+            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {

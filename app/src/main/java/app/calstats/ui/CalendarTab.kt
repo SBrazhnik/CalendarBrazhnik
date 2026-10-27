@@ -155,6 +155,7 @@ fun CalendarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     selected = vm.selectedDate,
                     byDay = byDay,
                     tasksByDay = tasksByDay,
+                    drinks = vm.drinks,
                     onSelect = { goTo(it) },
                 )
             }
@@ -168,7 +169,9 @@ fun CalendarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     }
 }
 
-private val CELL_HEIGHT = 52.dp
+private val CELL_HEIGHT = 54.dp
+val SOBER_COLOR = Color(0xFF2FA36B)
+val DRANK_COLOR = Color(0xFFD64545)
 
 @Composable
 private fun WeekHeader() {
@@ -192,6 +195,7 @@ private fun MonthGrid(
     selected: LocalDate,
     byDay: Map<LocalDate, List<EventInstance>>,
     tasksByDay: Map<LocalDate, List<TaskItem>>,
+    drinks: Map<LocalDate, Boolean>,
     onSelect: (LocalDate) -> Unit,
 ) {
     val first = month.atDay(1)
@@ -208,6 +212,7 @@ private fun MonthGrid(
                         isSelected = date == selected,
                         colors = byDay[date].orEmpty().map { it.color }.distinct().take(3),
                         hasTasks = tasksByDay[date].orEmpty().any { !it.done },
+                        drink = drinks[date],
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         onClick = { onSelect(date) },
                     )
@@ -225,6 +230,7 @@ private fun DayCell(
     isSelected: Boolean,
     colors: List<Int>,
     hasTasks: Boolean,
+    drink: Boolean?,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -262,6 +268,20 @@ private fun DayCell(
             colors.forEach { c -> Box(Modifier.size(5.dp).clip(CircleShape).background(Color(c))) }
             if (hasTasks) Box(Modifier.size(5.dp).border(1.dp, scheme.onSurfaceVariant, CircleShape))
         }
+        Box(
+            Modifier
+                .padding(top = 2.dp)
+                .width(16.dp)
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(
+                    when (drink) {
+                        true -> DRANK_COLOR
+                        false -> SOBER_COLOR
+                        null -> Color.Transparent
+                    },
+                ),
+        )
     }
 }
 
@@ -289,6 +309,9 @@ private fun DayAgenda(vm: MainViewModel, date: LocalDate, events: List<EventInst
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            if (!date.isAfter(vm.today)) {
+                item(key = "drink") { DrinkCard(vm, date) }
             }
             if (sorted.isEmpty() && tasks.isEmpty()) {
                 item {
@@ -387,6 +410,66 @@ private fun EventCard(vm: MainViewModel, e: EventInstance, day: LocalDate, onCli
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.CenterVertically).padding(end = 14.dp),
                 )
+            }
+        }
+    }
+}
+
+/** Отметка «пил / не пил» для выбранного дня и счётчик дней без алкоголя. */
+@Composable
+private fun DrinkCard(vm: MainViewModel, date: LocalDate) {
+    val mark = vm.drinks[date]
+    val summary = remember(vm.drinks, vm.today) { app.calstats.Sobriety.summary(vm.drinks, vm.today) }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (date == vm.today) "Алкоголь сегодня" else "Алкоголь в этот день",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                androidx.compose.material3.FilterChip(
+                    selected = mark == false,
+                    onClick = { vm.setDrink(date, if (mark == false) null else false) },
+                    label = { Text("Не пил") },
+                    colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = SOBER_COLOR,
+                        selectedLabelColor = Color.White,
+                    ),
+                )
+                Spacer(Modifier.width(8.dp))
+                androidx.compose.material3.FilterChip(
+                    selected = mark == true,
+                    onClick = { vm.setDrink(date, if (mark == true) null else true) },
+                    label = { Text("Пил") },
+                    colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = DRANK_COLOR,
+                        selectedLabelColor = Color.White,
+                    ),
+                )
+            }
+            if (summary.streak != null) {
+                Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 6.dp)) {
+                    Text(
+                        summary.streak.toString(),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = if (summary.streak > 0) SOBER_COLOR else DRANK_COLOR,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.padding(bottom = 4.dp)) {
+                        Text(
+                            Fmt.plural(summary.streak.toLong(), "день", "дня", "дней") + " без алкоголя",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        val sub = buildList {
+                            summary.lastDrank?.let { add("последний раз ${Fmt.date(it)}") }
+                            if (summary.longest > 0) add("рекорд ${summary.longest} дн.")
+                        }.joinToString(" · ")
+                        if (sub.isNotEmpty()) {
+                            Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
             }
         }
     }

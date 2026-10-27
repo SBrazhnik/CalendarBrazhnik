@@ -46,6 +46,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = CalendarRepository(app)
     private val store = DataStore(app)
     private val taskStore = TaskStore(app)
+    private val sobrietyStore = SobrietyStore(app)
     private val resolver = app.contentResolver
 
     val zone: ZoneId get() = ZoneId.systemDefault()
@@ -80,6 +81,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var selectedDate by mutableStateOf(LocalDate.now())
     var tasks by mutableStateOf(taskStore.load())
         private set
+    var drinks by mutableStateOf(sobrietyStore.load())
+        private set
+    var reminderEnabled by mutableStateOf(sobrietyStore.reminderEnabled)
+        private set
+    var reminderTime by mutableStateOf(sobrietyStore.reminderTime)
+        private set
 
     private var observer: ContentObserver? = null
     private var reloadJob: Job? = null
@@ -105,6 +112,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onResume() {
+        drinks = sobrietyStore.load()
+        DrinkReminder.schedule(getApplication())
         hasPermission = checkPermission()
         now = System.currentTimeMillis()
         today = LocalDate.now()
@@ -322,6 +331,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun newTaskId(): Long = System.currentTimeMillis()
 
+    // ---------- учёт алкоголя ----------
+
+    /** null — снять отметку. */
+    fun setDrink(date: LocalDate, drank: Boolean?) {
+        drinks = sobrietyStore.set(date, drank)
+        if (date == today.minusDays(1)) DrinkReminder.cancel(getApplication())
+    }
+
+    fun setReminderEnabled(v: Boolean) {
+        sobrietyStore.reminderEnabled = v
+        reminderEnabled = v
+        DrinkReminder.schedule(getApplication())
+    }
+
+    fun setReminderTime(t: java.time.LocalTime) {
+        sobrietyStore.reminderTime = t
+        reminderTime = t
+        DrinkReminder.schedule(getApplication())
+    }
+
+    var notificationAsked: Boolean
+        get() = sobrietyStore.notificationAsked
+        set(v) { sobrietyStore.notificationAsked = v }
+
+    fun testReminder() {
+        val app = getApplication<Application>()
+        if (!DrinkReminder.canNotify(app)) {
+            message = "Уведомления выключены — разрешите их в настройках Android"
+            return
+        }
+        DrinkReminder.showQuestion(app, today.minusDays(1), force = true)
+    }
+
     // ---------- резервная копия ----------
 
     fun backupFileName(): String = "napravleniya-backup-${LocalDate.now()}.json"
@@ -332,6 +374,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val json = DataStore.toJson(data)
                 json.put("tasks", TaskStore.toJson(tasks))
+                json.put("sobriety", sobrietyStore.backupJson())
                 val text = json.toString(2)
                 withContext(Dispatchers.IO) {
                     resolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
@@ -360,6 +403,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 update(restored)
                 val restoredTasks = json.optJSONArray("tasks")?.let { TaskStore.fromJson(it) }
                 if (restoredTasks != null) saveTasks(restoredTasks)
+                json.optJSONObject("sobriety")?.let {
+                    sobrietyStore.restore(it)
+                    drinks = sobrietyStore.load()
+                    reminderEnabled = sobrietyStore.reminderEnabled
+                    reminderTime = sobrietyStore.reminderTime
+                    DrinkReminder.schedule(getApplication())
+                }
                 message = "Восстановлено: направлений ${restored.directions.values.count { it.name.isNotBlank() }}" +
                     (restoredTasks?.let { ", задач ${it.size}" } ?: "")
             } catch (e: Exception) {
