@@ -96,6 +96,16 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Section("Модули") {
+                Text(
+                    "Включено: " + vm.enabledModules.joinToString(", ") { it.title },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(onClick = { vm.push(app.calstats.Screen.Modules) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Включить, выключить, порядок")
+                }
+            }
+
             Section("Синхронизация с Google") {
                 Text(
                     "Приложение работает с календарём телефона, который Android синхронизирует с Google: " +
@@ -203,7 +213,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
             Section("Резервная копия") {
                 Text(
                     "Сами события хранятся в Google Календаре: на новом телефоне они появятся после входа " +
-                        "в тот же аккаунт Google. Задачи, названия направлений и настройки Android автоматически " +
+                        "в тот же аккаунт Google. Задачи, расходы, желания, заметки, названия направлений и настройки Android автоматически " +
                         "сохраняет в резервную копию на Google Диске. Дополнительно можно сохранить их в файл.",
                     style = MaterialTheme.typography.bodyMedium,
                 )

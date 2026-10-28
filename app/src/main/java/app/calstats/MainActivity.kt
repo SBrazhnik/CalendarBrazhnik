@@ -1,6 +1,7 @@
 package app.calstats
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.compose.runtime.getValue
@@ -21,6 +22,7 @@ import app.calstats.ui.ColorsScreen
 import app.calstats.ui.DirectionScreen
 import app.calstats.ui.EditScreen
 import app.calstats.ui.HomeScreen
+import app.calstats.ui.IncomingDialog
 import app.calstats.ui.PermissionScreen
 import app.calstats.ui.SettingsScreen
 
@@ -30,6 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) handleShare(intent)
         setContent {
             AppTheme {
                 App(vm)
@@ -37,9 +40,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleShare(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         vm.onResume()
+    }
+
+    /** Текст или ссылка из другого приложения (Samsung Notes, Keep, Яндекс, браузер, маркетплейс). */
+    private fun handleShare(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() } ?: return
+        val pkg = referrer?.host.orEmpty()
+        val source = when {
+            pkg.contains("samsung.android.app.notes") -> "Samsung Notes"
+            pkg.contains("google.android.keep") -> "Google Keep"
+            pkg.contains("yandex") -> "Яндекс"
+            pkg.contains("ozon") -> "Ozon"
+            pkg.contains("wildberries") -> "Wildberries"
+            else -> "Другое приложение"
+        }
+        vm.incoming = SharedText(text, intent.getStringExtra(Intent.EXTRA_SUBJECT), source)
     }
 }
 
@@ -74,6 +98,8 @@ fun App(vm: MainViewModel) {
         }
     }
 
+    vm.incoming?.let { IncomingDialog(vm, it) }
+
     when (val screen = vm.stack.last()) {
         Screen.Main -> HomeScreen(vm, snackbar)
         is Screen.Direction -> DirectionScreen(vm, screen.key, snackbar)
@@ -85,5 +111,8 @@ fun App(vm: MainViewModel) {
         is Screen.ProjectEdit -> app.calstats.ui.ProjectEditScreen(vm, screen.id, snackbar)
         is Screen.Book -> app.calstats.ui.BookScreen(vm, screen.id, snackbar)
         is Screen.ExpenseEdit -> app.calstats.ui.ExpenseScreen(vm, screen.bookId, screen.expenseId, snackbar)
+        Screen.Modules -> app.calstats.ui.ModulesScreen(vm, snackbar)
+        is Screen.NoteEdit -> app.calstats.ui.NoteEditScreen(vm, screen.id, snackbar)
+        is Screen.WishListDetail -> app.calstats.ui.WishListScreen(vm, screen.id, snackbar)
     }
 }

@@ -42,7 +42,26 @@ enum class CalView(val title: String, val days: Int) {
 /** Снимок состояния модулей — для жеста «назад». */
 data class NavSnap(val tab: Tab, val calView: CalView, val taskView: String, val projectId: String?)
 
-enum class Tab(val title: String) { CALENDAR("Календарь"), TASKS("Задачи"), MONEY("Расходы"), ANALYSIS("Анализ") }
+/**
+ * Главная и модули приложения. Новый модуль = новая строка здесь + его экран;
+ * включение, порядок и место в нижней панели настраиваются в «Модулях».
+ */
+enum class Tab(val title: String, val description: String) {
+    HOME("Главная", ""),
+    CALENDAR("Календарь", "События Google Календаря, учёт алкоголя"),
+    TASKS("Задачи", "Проекты, доска, спринты, учёт времени"),
+    MONEY("Расходы", "Общие чеки и кто кому должен"),
+    ANALYSIS("Анализ", "Дни и часы по направлениям"),
+    WISHES("Желания", "Списки желаний и подарков"),
+    NOTES("Заметки", "Заметки, чек-листы, импорт из других приложений"),
+    ;
+
+    val isModule: Boolean get() = this != HOME
+
+    companion object {
+        val modules: List<Tab> get() = entries.filter { it.isModule }
+    }
+}
 
 sealed interface Screen {
     data object Main : Screen
@@ -64,7 +83,13 @@ sealed interface Screen {
     data class Book(val id: String) : Screen
     data class ExpenseEdit(val bookId: String, val expenseId: String?) : Screen
     data object Settings : Screen
+    data object Modules : Screen
+    data class NoteEdit(val id: String) : Screen
+    data class WishListDetail(val id: String) : Screen
 }
+
+/** Текст, присланный из другого приложения через «Поделиться». */
+data class SharedText(val text: String, val subject: String?, val source: String)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = CalendarRepository(app)
@@ -113,7 +138,60 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (navHistory.size > 40) navHistory.removeAt(0)
     }
 
-    private var tabState by mutableStateOf(Tab.CALENDAR)
+    // ---------- модули ----------
+
+    private fun loadTabs(key: String, default: List<Tab>): List<Tab> =
+        uiPrefs.getString(key, null)?.split(",")?.mapNotNull { n -> Tab.entries.firstOrNull { it.name == n } } ?: default
+
+    /** Порядок модулей (новые модули добавляются в конец). */
+    var moduleOrder by mutableStateOf(
+        loadTabs("modules_order", Tab.modules).let { saved -> saved.filter { it.isModule } + Tab.modules.filter { it !in saved } },
+    )
+        private set
+    var disabledModules by mutableStateOf(loadTabs("modules_disabled", emptyList()).toSet())
+        private set
+    /** Модули, которые НЕ показываются в нижней панели (по умолчанию там первые четыре). */
+    var unpinnedModules by mutableStateOf(loadTabs("modules_unpinned", listOf(Tab.WISHES, Tab.NOTES)).toSet())
+        private set
+
+    val enabledModules: List<Tab> get() = moduleOrder.filter { it !in disabledModules }
+
+    /** Нижняя панель: Главная + до 4 закреплённых включённых модулей. */
+    val bottomTabs: List<Tab> get() = listOf(Tab.HOME) + enabledModules.filter { it !in unpinnedModules }.take(4)
+
+    fun isEnabled(t: Tab) = t == Tab.HOME || t !in disabledModules
+
+    private fun saveModules() {
+        uiPrefs.edit()
+            .putString("modules_order", moduleOrder.joinToString(",") { it.name })
+            .putString("modules_disabled", disabledModules.joinToString(",") { it.name })
+            .putString("modules_unpinned", unpinnedModules.joinToString(",") { it.name })
+            .apply()
+    }
+
+    fun setModuleEnabled(t: Tab, on: Boolean) {
+        disabledModules = if (on) disabledModules - t else disabledModules + t
+        if (!on && tabState == t) tabState = Tab.HOME
+        saveModules()
+    }
+
+    fun setModulePinned(t: Tab, pinned: Boolean) {
+        unpinnedModules = if (pinned) unpinnedModules - t else unpinnedModules + t
+        saveModules()
+    }
+
+    fun moveModule(t: Tab, delta: Int) {
+        val list = moduleOrder.toMutableList()
+        val i = list.indexOf(t)
+        val j = (i + delta).coerceIn(0, list.lastIndex)
+        if (i < 0 || i == j) return
+        list.removeAt(i)
+        list.add(j, t)
+        moduleOrder = list
+        saveModules()
+    }
+
+    private var tabState by mutableStateOf(Tab.HOME)
     /** Текущий модуль. */
     var tab: Tab
         get() = tabState
@@ -186,6 +264,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var observer: ContentObserver? = null
     private var reloadJob: Job? = null
     private var lastLoadFinished = 0L
+    private var lastSyncRequest = 0L
 
     // ---------- навигация ----------
 
@@ -216,6 +295,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (hasPermission) {
             registerObserver()
             reload()
+            // Подтягиваем изменения из Google (в т.ч. удаления) при каждом открытии, не чаще раза в минуту.
+            if (System.currentTimeMillis() - lastSyncRequest > 60_000) {
+                lastSyncRequest = System.currentTimeMillis()
+                viewModelScope.launch {
+                    delay(1500)
+                    repo.requestSync(calendars)
+                }
+            }
         }
     }
 
@@ -224,7 +311,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val o = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 // Изменения пришли из Google (синхронизация) или из другого приложения.
-                if (System.currentTimeMillis() - lastLoadFinished > 1500) reload(1000)
+                // Не пропускаем ни одного изменения: перезагрузка с задержкой, повторные вызовы сливаются в один.
+                reload(800)
             }
         }
         resolver.registerContentObserver(CalendarContract.CONTENT_URI, true, o)
@@ -407,6 +495,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { workStore.save(w) }
             TasksWidget.refresh(getApplication())
         }
+    }
+
+    /** Пришло из «Поделиться» — ждёт выбора, куда сохранить. */
+    var incoming by mutableStateOf<SharedText?>(null)
+
+    fun saveIncomingAsNote() {
+        val sh = incoming ?: return
+        incoming = null
+        val note = app.calstats.work.NoteImport.fromSharedText(sh.text, sh.subject, sh.source)
+        updateWork { WorkOps.upsertNote(it, note) }
+        tab = Tab.NOTES
+        push(Screen.NoteEdit(note.id))
+    }
+
+    fun saveIncomingAsWish(listId: String) {
+        val sh = incoming ?: return
+        incoming = null
+        val link = Regex("""https?://\S+""").find(sh.text)?.value.orEmpty()
+        val rest = sh.text.replace(link, "").trim().lines().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        val title = (sh.subject?.trim()?.takeIf { it.isNotEmpty() } ?: rest).ifEmpty { "Желание" }.take(120)
+        updateWork { WorkOps.upsertWish(it, app.calstats.work.Wish(app.calstats.work.newId(), listId, title, link = link)) }
+        message = "Добавлено в список желаний"
+        tab = Tab.WISHES
+        push(Screen.WishListDetail(listId))
+    }
+
+    fun saveIncomingAsTask() {
+        val sh = incoming ?: return
+        incoming = null
+        var w = work
+        if (w.projects.isEmpty()) {
+            w = WorkOps.upsertProject(w, app.calstats.work.Project(app.calstats.work.newId(), "ЛИЧ", "Личное", app.calstats.work.PALETTE[0]))
+        }
+        val project = w.project(currentProjectId) ?: w.projects.first { !it.archived }
+        val lines = sh.text.trim().lines()
+        val title = (sh.subject?.trim()?.takeIf { it.isNotEmpty() } ?: lines.first()).take(120)
+        val (w2, issue) = WorkOps.createIssue(
+            w,
+            Issue(app.calstats.work.newId(), project.id, 0, title, description = sh.text.trim(), assigneeId = ME),
+        )
+        updateWork { w2 }
+        tab = Tab.TASKS
+        push(Screen.IssueDetail(issue.id))
     }
 
     fun reloadWork() {

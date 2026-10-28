@@ -60,8 +60,10 @@ class CalendarRepository(context: Context) {
             CalendarContract.Instances.DISPLAY_COLOR,
             CalendarContract.Instances.CALENDAR_ID,
         )
+        // Удалённые (DELETED=1 ждут отправки на сервер) и отменённые события не показываем.
         val selection = "(${CalendarContract.Instances.STATUS} IS NULL OR " +
-            "${CalendarContract.Instances.STATUS} != ${CalendarContract.Events.STATUS_CANCELED})"
+            "${CalendarContract.Instances.STATUS} != ${CalendarContract.Events.STATUS_CANCELED}) AND " +
+            "(${CalendarContract.Events.DELETED} IS NULL OR ${CalendarContract.Events.DELETED} = 0)"
         val result = ArrayList<EventInstance>()
         cr.query(uri, projection, selection, null, "${CalendarContract.Instances.BEGIN} ASC")?.use { c ->
             while (c.moveToNext()) {

@@ -149,4 +149,38 @@ object WorkOps {
         else w.copy(expenses = w.expenses + e)
 
     fun deleteExpense(w: Workspace, id: String): Workspace = w.copy(expenses = w.expenses.filter { it.id != id })
+
+    // ---------- желания ----------
+
+    fun upsertWishList(w: Workspace, l: WishList): Workspace =
+        if (w.wishLists.any { it.id == l.id }) w.copy(wishLists = w.wishLists.map { if (it.id == l.id) l else it })
+        else w.copy(wishLists = w.wishLists + l)
+
+    fun deleteWishList(w: Workspace, id: String): Workspace = w.copy(
+        wishLists = w.wishLists.filter { it.id != id },
+        wishes = w.wishes.filter { it.listId != id },
+    )
+
+    fun upsertWish(w: Workspace, x: Wish): Workspace {
+        val fixed = x.copy(updated = System.currentTimeMillis())
+        return if (w.wishes.any { it.id == x.id }) w.copy(wishes = w.wishes.map { if (it.id == x.id) fixed else it })
+        else w.copy(wishes = w.wishes + fixed)
+    }
+
+    fun deleteWish(w: Workspace, id: String): Workspace = w.copy(wishes = w.wishes.filter { it.id != id })
+
+    // ---------- заметки ----------
+
+    fun upsertNote(w: Workspace, n: Note): Workspace =
+        if (w.notes.any { it.id == n.id }) w.copy(notes = w.notes.map { if (it.id == n.id) n else it })
+        else w.copy(notes = w.notes + n)
+
+    fun deleteNote(w: Workspace, id: String): Workspace = w.copy(notes = w.notes.filter { it.id != id })
+
+    /** Добавляет заметки, пропуская те, что уже есть (по заголовку, тексту и дате создания). */
+    fun importNotes(w: Workspace, list: List<Note>): Pair<Workspace, Int> {
+        val existing = w.notes.map { Triple(it.title.trim(), it.asText().trim(), it.created / 1000) }.toHashSet()
+        val fresh = list.filter { Triple(it.title.trim(), it.asText().trim(), it.created / 1000) !in existing }
+        return w.copy(notes = w.notes + fresh) to fresh.size
+    }
 }

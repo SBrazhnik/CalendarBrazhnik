@@ -192,6 +192,78 @@ data class Expense(
     val localDate: LocalDate get() = runCatching { LocalDate.parse(date) }.getOrDefault(LocalDate.now())
 }
 
+// ---------------- Желания ----------------
+
+enum class WishStatus(val title: String) {
+    WANTED("Хочу"),
+    RESERVED("Забронировано"),
+    BOUGHT("Куплено"),
+    RECEIVED("Подарено"),
+}
+
+/** Список желаний: свой (ownerId = ME) или для близкого (подарки ему). */
+@Serializable
+data class WishList(
+    val id: String,
+    val title: String,
+    val ownerId: String = ME,
+    val occasion: String = "",
+    val date: String? = null,
+    val yearly: Boolean = false,
+    val color: Int = 0xFFE4572E.toInt(),
+    val emoji: String = "🎁",
+    val note: String = "",
+    val created: Long = System.currentTimeMillis(),
+    val archived: Boolean = false,
+) {
+    val localDate: LocalDate? get() = date?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+}
+
+@Serializable
+data class Wish(
+    val id: String,
+    val listId: String,
+    val title: String,
+    val link: String = "",
+    val price: Long? = null,
+    val note: String = "",
+    val priority: Int = 2,
+    val status: WishStatus = WishStatus.WANTED,
+    val reservedBy: String? = null,
+    val created: Long = System.currentTimeMillis(),
+    val updated: Long = System.currentTimeMillis(),
+)
+
+// ---------------- Заметки ----------------
+
+@Serializable
+data class CheckItem(val id: String, val text: String, val checked: Boolean = false)
+
+@Serializable
+data class Note(
+    val id: String,
+    val title: String = "",
+    val body: String = "",
+    val checklist: List<CheckItem> = emptyList(),
+    val isChecklist: Boolean = false,
+    val color: Int? = null,
+    val pinned: Boolean = false,
+    val archived: Boolean = false,
+    val labels: List<String> = emptyList(),
+    val source: String = "",
+    val created: Long = System.currentTimeMillis(),
+    val updated: Long = System.currentTimeMillis(),
+) {
+    val isEmpty: Boolean get() = title.isBlank() && body.isBlank() && checklist.none { it.text.isNotBlank() }
+
+    /** Текст для отправки в другие приложения. */
+    fun asText(): String = buildString {
+        if (title.isNotBlank()) append(title.trim()).append("\n")
+        if (isChecklist) checklist.forEach { append(if (it.checked) "☑ " else "☐ ").append(it.text).append("\n") }
+        else append(body)
+    }.trim()
+}
+
 @Serializable
 data class Workspace(
     val version: Int = 1,
@@ -203,6 +275,9 @@ data class Workspace(
     val issues: List<Issue> = emptyList(),
     val books: List<SplitBook> = emptyList(),
     val expenses: List<Expense> = emptyList(),
+    val wishLists: List<WishList> = emptyList(),
+    val wishes: List<Wish> = emptyList(),
+    val notes: List<Note> = emptyList(),
 ) {
     fun person(id: String?): Person? = when (id) {
         null -> null
