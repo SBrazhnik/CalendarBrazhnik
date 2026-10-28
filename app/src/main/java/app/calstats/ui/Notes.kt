@@ -133,14 +133,22 @@ fun NotesTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     val importZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val notes = withContext(Dispatchers.IO) {
-                runCatching { ctx.contentResolver.openInputStream(uri)?.use { NoteImport.readKeepZip(it) } }.getOrNull()
+            val notes: List<Note>? = withContext(Dispatchers.IO) {
+                try {
+                    ctx.contentResolver.openInputStream(uri)?.use { stream -> NoteImport.readKeepZip(stream) }
+                } catch (e: Exception) {
+                    null
+                }
             }
             if (notes == null) {
                 vm.message = "Не удалось прочитать архив"
             } else {
                 var added = 0
-                vm.updateWork { w -> WorkOps.importNotes(w, notes).also { added = it.second }.first }
+                vm.updateWork { w: app.calstats.work.Workspace ->
+                    val r = WorkOps.importNotes(w, notes)
+                    added = r.second
+                    r.first
+                }
                 vm.message = if (notes.isEmpty()) "В архиве не найдено заметок Google Keep" else "Импортировано заметок: $added"
             }
         }

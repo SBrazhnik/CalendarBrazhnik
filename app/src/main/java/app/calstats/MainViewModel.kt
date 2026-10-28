@@ -26,6 +26,11 @@ import org.json.JSONObject
 import app.calstats.widget.CalendarWidget
 import app.calstats.widget.TasksWidget
 import app.calstats.work.Issue
+import app.calstats.work.NoteImport
+import app.calstats.work.PALETTE
+import app.calstats.work.Project
+import app.calstats.work.Wish
+import app.calstats.work.newId
 import app.calstats.work.ME
 import app.calstats.work.Status
 import app.calstats.work.WorkOps
@@ -503,7 +508,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveIncomingAsNote() {
         val sh = incoming ?: return
         incoming = null
-        val note = app.calstats.work.NoteImport.fromSharedText(sh.text, sh.subject, sh.source)
+        val note = NoteImport.fromSharedText(sh.text, sh.subject, sh.source)
         updateWork { WorkOps.upsertNote(it, note) }
         tab = Tab.NOTES
         push(Screen.NoteEdit(note.id))
@@ -515,7 +520,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val link = Regex("""https?://\S+""").find(sh.text)?.value.orEmpty()
         val rest = sh.text.replace(link, "").trim().lines().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
         val title = (sh.subject?.trim()?.takeIf { it.isNotEmpty() } ?: rest).ifEmpty { "Желание" }.take(120)
-        updateWork { WorkOps.upsertWish(it, app.calstats.work.Wish(app.calstats.work.newId(), listId, title, link = link)) }
+        updateWork { WorkOps.upsertWish(it, Wish(newId(), listId, title, link = link)) }
         message = "Добавлено в список желаний"
         tab = Tab.WISHES
         push(Screen.WishListDetail(listId))
@@ -526,14 +531,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         incoming = null
         var w = work
         if (w.projects.isEmpty()) {
-            w = WorkOps.upsertProject(w, app.calstats.work.Project(app.calstats.work.newId(), "ЛИЧ", "Личное", app.calstats.work.PALETTE[0]))
+            w = WorkOps.upsertProject(w, Project(newId(), "ЛИЧ", "Личное", PALETTE[0]))
         }
         val project = w.project(currentProjectId) ?: w.projects.first { !it.archived }
         val lines = sh.text.trim().lines()
         val title = (sh.subject?.trim()?.takeIf { it.isNotEmpty() } ?: lines.first()).take(120)
         val (w2, issue) = WorkOps.createIssue(
             w,
-            Issue(app.calstats.work.newId(), project.id, 0, title, description = sh.text.trim(), assigneeId = ME),
+            Issue(newId(), project.id, 0, title, description = sh.text.trim(), assigneeId = ME),
         )
         updateWork { w2 }
         tab = Tab.TASKS
