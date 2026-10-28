@@ -22,7 +22,7 @@ object NoteImport {
         "PINK" to 0xFFFDCFE8, "BROWN" to 0xFFE6C9A8, "GRAY" to 0xFFE8EAED,
     ).mapValues { it.value.toInt() }
 
-    /** Одна заметка Google Keep из архива Google Takeout (Keep/*.json). Корзина пропускается. */
+    /** Одна заметка Google Keep из архива Google Takeout (файлы Keep с расширением .json). Корзина пропускается. */
     fun parseKeepJson(text: String): Note? {
         val o = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return null
         fun str(k: String) = o[k]?.jsonPrimitive?.contentOrNull ?: ""
@@ -56,7 +56,7 @@ object NoteImport {
         return if (note.isEmpty) null else note
     }
 
-    /** Архив Google Takeout (zip): берём все Keep/*.json. */
+    /** Архив Google Takeout (zip): берём все файлы Keep с расширением .json. */
     fun readKeepZip(input: InputStream): List<Note> {
         val out = ArrayList<Note>()
         ZipInputStream(input).use { zip ->
