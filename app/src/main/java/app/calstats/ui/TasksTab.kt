@@ -94,7 +94,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
-private val TASK_VIEWS = listOf("BOARD" to "Доска", "BACKLOG" to "Бэклог", "TIMELINE" to "Таймлайн", "TIME" to "Время")
+private val TASK_VIEWS = listOf("ALL" to "Все задачи", "BOARD" to "Доска", "BACKLOG" to "Бэклог", "TIMELINE" to "Таймлайн", "TIME" to "Время")
 
 /** Вкладка «Задачи» — таск-трекер в духе Jira. */
 @Composable
@@ -192,6 +192,7 @@ fun TasksTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 )
             }
             when (vm.taskView) {
+                "ALL" -> AllIssuesView(vm)
                 "BACKLOG" -> BacklogView(vm)
                 "TIMELINE" -> GanttView(vm)
                 "TIME" -> TimeView(vm)
@@ -853,6 +854,8 @@ fun CreateIssueSheet(vm: MainViewModel, onDismiss: () -> Unit, parent: Issue? = 
     var projectId by remember { mutableStateOf(parent?.projectId ?: vm.currentProjectId ?: w.projects.firstOrNull { !it.archived }?.id) }
     var type by remember { mutableStateOf(if (parent != null) IssueType.SUBTASK else IssueType.TASK) }
     var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var saved by remember { mutableStateOf(false) }
     var assignee by remember { mutableStateOf<String?>(ME) }
     var priority by remember { mutableStateOf(Priority.MEDIUM) }
     var due by remember { mutableStateOf<LocalDate?>(null) }
@@ -861,10 +864,46 @@ fun CreateIssueSheet(vm: MainViewModel, onDismiss: () -> Unit, parent: Issue? = 
     var personMenu by remember { mutableStateOf(false) }
     var projectMenu by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
+    /** Создаёт задачу из того, что введено. Название по умолчанию — первая строка описания. */
+    fun create(): Boolean {
+        if (saved) return false
+        val pid = projectId ?: return false
+        val t = title.trim().ifEmpty { description.trim().lineSequence().firstOrNull()?.take(80).orEmpty() }
+        if (t.isEmpty()) return false
+        saved = true
+        vm.updateWork { ws ->
+            WorkOps.createIssue(
+                ws,
+                Issue(
+                    id = newId(),
+                    projectId = pid,
+                    number = 0,
+                    title = t,
+                    description = description.trim(),
+                    type = type,
+                    priority = priority,
+                    assigneeId = assignee,
+                    due = due?.toString(),
+                    parentId = parent?.id,
+                    sprintId = parent?.sprintId ?: if (toSprint) active?.id else null,
+                ),
+            ).first
+        }
+        return true
+    }
+
+    // Смахнули окно или нажали «назад» — ничего не теряем: введённое сохраняется задачей.
+    ModalBottomSheet(
+        onDismissRequest = {
+            if (create()) vm.message = "Задача сохранена автоматически"
+            onDismiss()
+        },
+        sheetState = sheet,
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .navigationBarsPadding()
                 .imePadding(),
@@ -898,6 +937,15 @@ fun CreateIssueSheet(vm: MainViewModel, onDismiss: () -> Unit, parent: Issue? = 
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 modifier = Modifier.fillMaxWidth(),
             )
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Описание") },
+                minLines = 2,
+                maxLines = 8,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                modifier = Modifier.fillMaxWidth(),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     OutlinedButton(onClick = { personMenu = true }) {
@@ -924,30 +972,151 @@ fun CreateIssueSheet(vm: MainViewModel, onDismiss: () -> Unit, parent: Issue? = 
             }
             Button(
                 onClick = {
-                    val pid = projectId ?: return@Button
-                    vm.updateWork { ws ->
-                        WorkOps.createIssue(
-                            ws,
-                            Issue(
-                                id = newId(),
-                                projectId = pid,
-                                number = 0,
-                                title = title.trim(),
-                                type = type,
-                                priority = priority,
-                                assigneeId = assignee,
-                                due = due?.toString(),
-                                parentId = parent?.id,
-                                sprintId = parent?.sprintId ?: if (toSprint) active?.id else null,
-                            ),
-                        ).first
-                    }
-                    onDismiss()
+                    if (create()) onDismiss()
                 },
-                enabled = title.isNotBlank() && projectId != null,
+                enabled = (title.isNotBlank() || description.isNotBlank()) && projectId != null,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) { Text("Создать") }
             Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+// ======================= ВСЕ ЗАДАЧИ =======================
+
+/** Все задачи из всех проектов: поиск, фильтр по статусу, смена статуса прямо из списка. */
+@Composable
+private fun AllIssuesView(vm: MainViewModel) {
+    val w = vm.work
+    var query by remember { mutableStateOf("") }
+    var statuses by remember { mutableStateOf(setOf(Status.TODO, Status.IN_PROGRESS, Status.REVIEW)) }
+    val all = w.issues.filter { it.type != IssueType.EPIC && (!vm.onlyMine || it.assigneeId == ME) }
+    val q = query.trim().lowercase()
+    val shown = all.filter { i ->
+        i.status in statuses && (q.isEmpty() || i.title.lowercase().contains(q) || w.key(i).lowercase().contains(q) ||
+            i.labels.any { it.lowercase().contains(q) })
+    }
+    val byProject = shown.groupBy { it.projectId }
+    val projects = w.projects.filter { it.id in byProject.keys }.sortedBy { it.name }
+
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        item {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Поиск по названию, ключу, метке") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Status.entries.forEach { st ->
+                    val n = all.count { it.status == st }
+                    FilterChip(
+                        selected = st in statuses,
+                        onClick = { statuses = if (st in statuses) statuses - st else statuses + st },
+                        label = { Text("${st.title} · $n") },
+                        leadingIcon = { Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(statusColor(st))) },
+                    )
+                }
+            }
+        }
+        if (shown.isEmpty()) {
+            item {
+                Text(
+                    if (all.isEmpty()) "Задач пока нет — нажмите «Создать»." else "Ничего не найдено по фильтрам.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(8.dp),
+                )
+            }
+        }
+        projects.forEach { p ->
+            val list = byProject[p.id].orEmpty().sortedWith(
+                compareBy<Issue>({ it.status.ordinal }, { it.priority.ordinal }, { it.dueDate ?: LocalDate.MAX }, { it.number }),
+            )
+            item(key = "p_${p.id}") {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 2.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            vm.selectProject(p.id)
+                            vm.selectTaskView("BOARD")
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(20.dp).clip(RoundedCornerShape(5.dp)).background(Color(p.color)), contentAlignment = Alignment.Center) {
+                        Text(p.key.take(1), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(p.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Text("${list.size}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            items(list, key = { "a_${it.id}" }) { i -> AllIssueRow(vm, i) }
+        }
+    }
+}
+
+@Composable
+private fun AllIssueRow(vm: MainViewModel, i: Issue) {
+    val w = vm.work
+    var statusMenu by remember { mutableStateOf(false) }
+    Card(
+        onClick = { vm.push(Screen.IssueDetail(i.id)) },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            TypeIcon(i.type)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    i.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (i.done) TextDecoration.LineThrough else null,
+                )
+                val due = i.dueDate
+                val overdue = due != null && !i.done && due.isBefore(vm.today)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(w.key(i), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(6.dp))
+                    PriorityIcon(i.priority)
+                    if (due != null) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            Fmt.dueShort(due, vm.today),
+                            fontSize = 12.sp,
+                            color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (overdue) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Box {
+                StatusPill(i.status) { statusMenu = true }
+                DropdownMenu(expanded = statusMenu, onDismissRequest = { statusMenu = false }) {
+                    Status.entries.forEach { st ->
+                        DropdownMenuItem(
+                            text = { StatusPill(st) },
+                            onClick = {
+                                statusMenu = false
+                                vm.updateWork { WorkOps.setStatus(it, i.id, st) }
+                            },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Avatar(w.person(i.assigneeId), 24.dp)
         }
     }
 }

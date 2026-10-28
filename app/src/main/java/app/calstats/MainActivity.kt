@@ -1,6 +1,12 @@
 package app.calstats
 
+import android.app.Activity
 import android.os.Bundle
+import android.widget.Toast
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -53,7 +59,20 @@ fun App(vm: MainViewModel) {
         return
     }
 
-    BackHandler(enabled = vm.stack.size > 1) { vm.pop() }
+    // «Назад»: закрыть экран → вернуться к предыдущему модулю/виду → выйти двойным нажатием.
+    val activity = LocalContext.current as? Activity
+    var lastBack by remember { mutableLongStateOf(0L) }
+    BackHandler(enabled = true) {
+        when {
+            vm.stack.size > 1 -> vm.pop()
+            vm.navigateBack() -> {}
+            System.currentTimeMillis() - lastBack < 2000 -> activity?.finish()
+            else -> {
+                lastBack = System.currentTimeMillis()
+                Toast.makeText(activity, "Нажмите «назад» ещё раз, чтобы выйти", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     when (val screen = vm.stack.last()) {
         Screen.Main -> HomeScreen(vm, snackbar)

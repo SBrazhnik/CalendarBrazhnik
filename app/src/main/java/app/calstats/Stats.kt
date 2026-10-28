@@ -83,7 +83,8 @@ class Window(
     val zone: ZoneId,
 )
 
-class Contribution(val minutes: Long, val dates: List<LocalDate>)
+/** Вклад события в окно: минуты, дни и (для событий со временем) обрезанный интервал. */
+class Contribution(val minutes: Long, val dates: List<LocalDate>, val startMs: Long = 0, val endMs: Long = 0)
 
 object Stats {
     fun groupKey(color: Int, setting: DirectionSetting?): String {
@@ -99,11 +100,14 @@ object Stats {
         val lists = LinkedHashMap<String, MutableList<EventInstance>>()
         val colorCounts = HashMap<String, HashMap<Int, Int>>()
         val names = HashMap<String, String>()
+        val seen = HashSet<String>()
         for (i in instances) {
             if (i.calendarId !in includedCalendarIds) continue
             val s = data.directions[i.color]
             if (s?.hidden == true) continue
             val key = groupKey(i.color, s)
+            // Одно и то же событие в двух календарях (например, Google и Samsung) считаем один раз.
+            if (!seen.add("$key|${i.title.trim().lowercase()}|${i.begin}|${i.end}|${i.allDay}")) continue
             lists.getOrPut(key) { mutableListOf() } += i
             val counts = colorCounts.getOrPut(key) { HashMap() }
             counts[i.color] = (counts[i.color] ?: 0) + 1
@@ -172,20 +176,43 @@ object Stats {
         if (e <= s) return null
         val from = localDate(s, w.zone)
         val to = localDate(e - 1, w.zone).plusDays(1)
-        return Contribution((e - s) / 60_000L, dates(from, to))
+        return Contribution((e - s) / 60_000L, dates(from, to), s, e)
     }
 
+    /**
+     * Дни, события и часы в окне. Часы считаются по объединению интервалов:
+     * если два события направления пересекаются по времени, общее время не удваивается.
+     */
     fun aggregate(list: List<EventInstance>, w: Window): Agg {
         var events = 0
-        var minutes = 0L
         val days = HashSet<LocalDate>()
+        val intervals = ArrayList<LongArray>()
         for (i in list) {
             val c = contribution(i, w) ?: continue
             events++
-            minutes += c.minutes
             days.addAll(c.dates)
+            if (c.endMs > c.startMs) intervals += longArrayOf(c.startMs, c.endMs)
         }
-        return Agg(days.size, events, minutes, days)
+        return Agg(days.size, events, unionMs(intervals) / 60_000L, days)
+    }
+
+    fun unionMs(intervals: List<LongArray>): Long {
+        if (intervals.isEmpty()) return 0
+        val sorted = intervals.sortedBy { it[0] }
+        var total = 0L
+        var curS = sorted[0][0]
+        var curE = sorted[0][1]
+        for (k in 1 until sorted.size) {
+            val (s, e) = sorted[k][0] to sorted[k][1]
+            if (s <= curE) {
+                if (e > curE) curE = e
+            } else {
+                total += curE - curS
+                curS = s
+                curE = e
+            }
+        }
+        return total + (curE - curS)
     }
 
     fun started(i: EventInstance, now: Long, today: LocalDate): Boolean =

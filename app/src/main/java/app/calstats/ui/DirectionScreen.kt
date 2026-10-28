@@ -3,6 +3,13 @@
 package app.calstats.ui
 
 import androidx.compose.foundation.background
+import java.time.LocalDate
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -92,13 +99,6 @@ fun DirectionScreen(vm: MainViewModel, key: String, snackbar: SnackbarHostState)
         val w = remember(vm.period, vm.now, vm.data) { vm.periodWindow() }
         val agg = remember(group, w) { Stats.aggregate(group.instances, w) }
         val (last, next) = remember(group, vm.now) { Stats.lastAndNext(group.instances, vm.now, vm.today) }
-        val year = vm.period.anchor.year
-        val monthly = remember(group, year, vm.now, vm.data) {
-            (1..12).map { m ->
-                val p = Period(PeriodType.MONTH, java.time.LocalDate.of(year, m, 1), vm.period.customStart, vm.period.customEndInclusive)
-                Stats.aggregate(group.instances, vm.periodWindow(p))
-            }
-        }
         val events = remember(group, w) {
             group.instances.filter { Stats.contribution(it, w) != null }.sortedByDescending { it.begin }
         }
@@ -138,7 +138,7 @@ fun DirectionScreen(vm: MainViewModel, key: String, snackbar: SnackbarHostState)
                     }
                 }
             }
-            item { MonthlyCard(year, monthly, Color(group.color)) }
+            item { BreakdownCard(vm, group) }
             item {
                 Text(
                     "События за период: ${events.size}",
@@ -154,37 +154,138 @@ fun DirectionScreen(vm: MainViewModel, key: String, snackbar: SnackbarHostState)
     }
 }
 
+private class BreakdownRow(val label: String, val agg: Agg, val period: Period)
+
+/**
+ * Разбивка направления по месяцам выбранного года (или по годам).
+ * Каждая строка считается тем же способом, что и итог за период, поэтому суммы сходятся.
+ */
 @Composable
-private fun MonthlyCard(year: Int, monthly: List<Agg>, color: Color) {
-    val byHours = monthly.any { it.minutes > 0 }
-    val maxValue = monthly.maxOf { if (byHours) it.minutes else it.days.toLong() }.coerceAtLeast(1)
+private fun BreakdownCard(vm: MainViewModel, group: app.calstats.DirectionGroup) {
+    val periodYear = when (vm.period.type) {
+        PeriodType.ALL -> vm.today.year
+        PeriodType.CUSTOM -> vm.period.customEndInclusive.year
+        else -> vm.period.start(vm.loadStart).year
+    }
+    var year by remember(periodYear) { mutableIntStateOf(periodYear) }
+    var byYears by remember { mutableStateOf(vm.period.type == PeriodType.ALL) }
+    val color = Color(group.color)
+    val firstYear = remember(group) {
+        group.instances.minOfOrNull { Stats.firstDay(it, vm.zone).year }?.coerceAtLeast(vm.loadStart.year) ?: vm.today.year
+    }
+    val rows = remember(group, year, byYears, vm.now, vm.data) {
+        if (byYears) {
+            (vm.today.year downTo firstYear).map { y ->
+                val p = Period(PeriodType.YEAR, LocalDate.of(y, 1, 1), vm.period.customStart, vm.period.customEndInclusive)
+                BreakdownRow(y.toString(), Stats.aggregate(group.instances, vm.periodWindow(p)), p)
+            }
+        } else {
+            (1..12).map { m ->
+                val p = Period(PeriodType.MONTH, LocalDate.of(year, m, 1), vm.period.customStart, vm.period.customEndInclusive)
+                BreakdownRow(Fmt.monthShort(m), Stats.aggregate(group.instances, vm.periodWindow(p)), p)
+            }
+        }
+    }
+    val total = remember(rows) {
+        val days = HashSet<LocalDate>()
+        rows.forEach { days.addAll(it.agg.dates) }
+        Triple(days.size, rows.sumOf { it.agg.events }, rows.sumOf { it.agg.minutes })
+    }
+    val byHours = rows.any { it.agg.minutes > 0 }
+    val maxValue = rows.maxOfOrNull { if (byHours) it.agg.minutes else it.agg.days.toLong() }?.coerceAtLeast(1) ?: 1
+
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("По месяцам — $year", style = MaterialTheme.typography.titleMedium)
-            monthly.forEachIndexed { idx, a ->
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!byYears) {
+                    IconButton(onClick = { year-- }, modifier = Modifier.size(36.dp)) { Text("‹", style = MaterialTheme.typography.titleLarge) }
+                    Text("$year", style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = { year++ }, enabled = year < vm.today.year + 1, modifier = Modifier.size(36.dp)) {
+                        Text("›", style = MaterialTheme.typography.titleLarge)
+                    }
+                } else {
+                    Text("По годам", style = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(Modifier.weight(1f))
+                FilterChip(selected = !byYears, onClick = { byYears = false }, label = { Text("Месяцы") })
+                Spacer(Modifier.width(6.dp))
+                FilterChip(selected = byYears, onClick = { byYears = true }, label = { Text("Годы") })
+            }
+            // Шапка таблицы
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("", Modifier.width(44.dp))
+                Spacer(Modifier.weight(1f))
+                HeaderCell("дни")
+                HeaderCell("соб.")
+                HeaderCell("часы")
+            }
+            rows.forEach { r ->
+                val a = r.agg
                 val value = if (byHours) a.minutes else a.days.toLong()
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(Fmt.monthShort(idx + 1), Modifier.width(40.dp), style = MaterialTheme.typography.bodySmall)
-                    Box(Modifier.weight(1f).height(14.dp)) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = a.events > 0) { vm.period = r.period }
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(r.label, Modifier.width(44.dp), style = MaterialTheme.typography.bodySmall)
+                    Box(Modifier.weight(1f).height(12.dp)) {
                         if (value > 0) {
                             Box(
                                 Modifier
                                     .fillMaxWidth(value.toFloat() / maxValue)
-                                    .height(14.dp)
+                                    .height(12.dp)
                                     .clip(RoundedCornerShape(4.dp))
                                     .background(color),
                             )
                         }
                     }
-                    Text(
-                        if (a.events == 0) "—" else "${Fmt.hours(a.minutes)} ч · ${a.days} дн",
-                        Modifier.width(96.dp).padding(start = 8.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    ValueCell(if (a.events == 0) "—" else a.days.toString())
+                    ValueCell(if (a.events == 0) "—" else a.events.toString())
+                    ValueCell(if (a.events == 0) "—" else Fmt.hours(a.minutes))
                 }
             }
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (byYears) "Всего" else "За год", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                ValueCell(total.first.toString(), bold = true)
+                ValueCell(total.second.toString(), bold = true)
+                ValueCell(Fmt.hours(total.third), bold = true)
+            }
+            Text(
+                "Нажмите на строку, чтобы открыть этот период. Пересекающиеся по времени события одного направления " +
+                    "не удваивают часы; события «весь день» дают дни, но не часы.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
+}
+
+@Composable
+private fun HeaderCell(text: String) {
+    Text(
+        text,
+        Modifier.width(48.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+    )
+}
+
+@Composable
+private fun ValueCell(text: String, bold: Boolean = false) {
+    Text(
+        text,
+        Modifier.width(48.dp),
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = if (bold) androidx.compose.ui.text.font.FontWeight.Bold else null,
+        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+        maxLines = 1,
+    )
 }
 
 @Composable

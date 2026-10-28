@@ -34,9 +34,13 @@ import app.calstats.work.Workspace
 import java.time.LocalDate
 import java.time.ZoneId
 
+/** Режим нижней части модуля «Календарь». */
 enum class CalView(val title: String, val days: Int) {
-    SCHEDULE("Расписание", 0), DAY("День", 1), THREE("3 дня", 3), WEEK("Неделя", 7), MONTH("Месяц", 0),
+    LIST("Список", 0), DAY("День", 1), THREE("3 дня", 3), WEEK("Неделя", 7), SCHEDULE("Расписание", 0),
 }
+
+/** Снимок состояния модулей — для жеста «назад». */
+data class NavSnap(val tab: Tab, val calView: CalView, val taskView: String, val projectId: String?)
 
 enum class Tab(val title: String) { CALENDAR("Календарь"), TASKS("Задачи"), MONEY("Расходы"), ANALYSIS("Анализ") }
 
@@ -97,32 +101,79 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val stack = mutableStateListOf<Screen>(Screen.Main)
 
-    var tab by mutableStateOf(Tab.CALENDAR)
     private val uiPrefs = app.getSharedPreferences("calstats_ui", android.content.Context.MODE_PRIVATE)
+
+    /** История переходов между модулями и видами: «назад» возвращает к предыдущему. */
+    private val navHistory = mutableListOf<NavSnap>()
+    private var restoring = false
+    private fun snap() = NavSnap(tabState, calViewState, taskViewState, projectState)
+    private fun record(before: NavSnap) {
+        if (restoring || before == snap()) return
+        navHistory += before
+        if (navHistory.size > 40) navHistory.removeAt(0)
+    }
+
+    private var tabState by mutableStateOf(Tab.CALENDAR)
+    /** Текущий модуль. */
+    var tab: Tab
+        get() = tabState
+        set(v) {
+            val before = snap()
+            tabState = v
+            record(before)
+        }
+
     private var calViewState by mutableStateOf(
-        runCatching { CalView.valueOf(uiPrefs.getString("cal_view", null) ?: "MONTH") }.getOrDefault(CalView.MONTH),
+        runCatching { CalView.valueOf(uiPrefs.getString("cal_view", null) ?: "LIST") }.getOrDefault(CalView.LIST),
     )
     var calView: CalView
         get() = calViewState
         set(v) {
+            val before = snap()
             calViewState = v
             uiPrefs.edit().putString("cal_view", v.name).apply()
+            record(before)
         }
+
+    /** «Назад» на главном экране: true — вернулись к предыдущему виду, false — истории нет. */
+    fun navigateBack(): Boolean {
+        val last = navHistory.removeLastOrNull() ?: return false
+        restoring = true
+        tabState = last.tab
+        calViewState = last.calView
+        taskViewState = last.taskView
+        projectState = last.projectId
+        restoring = false
+        return true
+    }
+
+    /** Сворачивание месяца в модуле «Календарь». */
+    var monthCollapsed by mutableStateOf(uiPrefs.getBoolean("month_collapsed", false))
+        private set
+    fun setMonthCollapsed(v: Boolean) {
+        if (monthCollapsed == v) return
+        monthCollapsed = v
+        uiPrefs.edit().putBoolean("month_collapsed", v).apply()
+    }
     var selectedDate by mutableStateOf(LocalDate.now())
     var work by mutableStateOf(workStore.load())
         private set
     /** Выбранный проект во вкладке «Задачи» (null — все проекты). */
-    var currentProjectId by mutableStateOf<String?>(uiPrefs.getString("project", null))
-        private set
+    private var projectState by mutableStateOf<String?>(uiPrefs.getString("project", null))
+    val currentProjectId: String? get() = projectState
     fun selectProject(id: String?) {
-        currentProjectId = id
+        val before = snap()
+        projectState = id
         uiPrefs.edit().putString("project", id).apply()
+        record(before)
     }
-    var taskView by mutableStateOf(uiPrefs.getString("task_view", "BOARD") ?: "BOARD")
-        private set
+    private var taskViewState by mutableStateOf(uiPrefs.getString("task_view", "BOARD") ?: "BOARD")
+    val taskView: String get() = taskViewState
     fun selectTaskView(v: String) {
-        taskView = v
+        val before = snap()
+        taskViewState = v
         uiPrefs.edit().putString("task_view", v).apply()
+        record(before)
     }
     var onlyMine by mutableStateOf(false)
     var drinks by mutableStateOf(sobrietyStore.load())

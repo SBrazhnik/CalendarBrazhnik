@@ -2,7 +2,6 @@ package app.calstats.ui
 
 import android.Manifest
 import android.os.Build
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
@@ -31,10 +30,9 @@ import app.calstats.MainViewModel
 import app.calstats.R
 import app.calstats.Tab
 
-/** Главный экран с нижней навигацией: Календарь · Задачи · Анализ. */
+/** Главный экран: модули Календарь · Задачи · Расходы · Анализ в нижней навигации. */
 @Composable
 fun HomeScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
-    BackHandler(enabled = vm.tab != Tab.CALENDAR) { vm.tab = Tab.CALENDAR }
 
     // Android 13+: один раз просим разрешение на уведомления для ежедневного вопроса.
     val ctx = LocalContext.current
