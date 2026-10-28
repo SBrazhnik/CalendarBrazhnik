@@ -114,7 +114,7 @@ fun CalendarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (available.y < -6f && !vm.monthCollapsed) {
-                    vm.setMonthCollapsed(true)
+                    vm.changeMonthCollapsed(true)
                     return Offset(0f, available.y)
                 }
                 return Offset.Zero
@@ -122,7 +122,7 @@ fun CalendarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
 
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 if (available.y > 12f && vm.monthCollapsed && source == NestedScrollSource.UserInput) {
-                    vm.setMonthCollapsed(false)
+                    vm.changeMonthCollapsed(false)
                     return Offset(0f, available.y)
                 }
                 return Offset.Zero
@@ -149,7 +149,7 @@ fun CalendarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 },
                 actions = {
                     TodayButton(vm.today.dayOfMonth) { vm.selectedDate = vm.today }
-                    IconButton(onClick = { vm.setMonthCollapsed(!collapsed) }) {
+                    IconButton(onClick = { vm.changeMonthCollapsed(!collapsed) }) {
                         Icon(if (collapsed) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp, if (collapsed) "Развернуть месяц" else "Свернуть месяц")
                     }
                     Box {
@@ -193,8 +193,8 @@ fun CalendarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     detectVerticalDragGestures(
                         onDragStart = { drag = 0f },
                         onDragEnd = {
-                            if (drag < -40f) vm.setMonthCollapsed(true)
-                            if (drag > 40f) vm.setMonthCollapsed(false)
+                            if (drag < -40f) vm.changeMonthCollapsed(true)
+                            if (drag > 40f) vm.changeMonthCollapsed(false)
                         },
                         onVerticalDrag = { _, dy -> drag += dy },
                     )
@@ -212,13 +212,13 @@ fun CalendarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .clickable { vm.setMonthCollapsed(!collapsed) }
+                            .clickable { vm.changeMonthCollapsed(!collapsed) }
                             .pointerInput(Unit) {
                                 detectVerticalDragGestures(
                                     onDragStart = { drag = 0f },
                                     onDragEnd = {
-                                        if (drag < -30f) vm.setMonthCollapsed(true)
-                                        if (drag > 30f) vm.setMonthCollapsed(false)
+                                        if (drag < -30f) vm.changeMonthCollapsed(true)
+                                        if (drag > 30f) vm.changeMonthCollapsed(false)
                                     },
                                     onVerticalDrag = { _, dy -> drag += dy },
                                 )

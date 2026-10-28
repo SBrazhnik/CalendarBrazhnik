@@ -150,7 +150,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Сворачивание месяца в модуле «Календарь». */
     var monthCollapsed by mutableStateOf(uiPrefs.getBoolean("month_collapsed", false))
         private set
-    fun setMonthCollapsed(v: Boolean) {
+    fun changeMonthCollapsed(v: Boolean) {
         if (monthCollapsed == v) return
         monthCollapsed = v
         uiPrefs.edit().putBoolean("month_collapsed", v).apply()
