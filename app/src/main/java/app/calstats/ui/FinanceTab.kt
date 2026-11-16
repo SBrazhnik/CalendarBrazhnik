@@ -604,7 +604,7 @@ private fun LazyListScope.payments(vm: MainViewModel) {
 }
 
 @Composable
-private fun PaymentLine(vm: MainViewModel, r: Recurring) {
+internal fun PaymentLine(vm: MainViewModel, r: Recurring) {
     val days = ChronoUnit.DAYS.between(vm.today, r.next)
     val c = vm.work.category(r.categoryId)
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -637,7 +637,7 @@ private fun PaymentLine(vm: MainViewModel, r: Recurring) {
 }
 
 @Composable
-private fun RecurringDialog(vm: MainViewModel, r: Recurring, onDismiss: () -> Unit) {
+internal fun RecurringDialog(vm: MainViewModel, r: Recurring, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val w = vm.work
     val exists = w.recurrings.any { it.id == r.id }
@@ -649,6 +649,7 @@ private fun RecurringDialog(vm: MainViewModel, r: Recurring, onDismiss: () -> Un
     var category by remember { mutableStateOf(r.categoryId ?: w.finCategories.firstOrNull { it.name == "Подписки" }?.id) }
     var subscription by remember { mutableStateOf(r.subscription) }
     var active by remember { mutableStateOf(r.active) }
+    var trial by remember { mutableStateOf(r.trialUntil?.let { runCatching { LocalDate.parse(it) }.getOrNull() }) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (exists) "Платёж" else "Новый платёж") },
@@ -656,6 +657,11 @@ private fun RecurringDialog(vm: MainViewModel, r: Recurring, onDismiss: () -> Un
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Название: Яндекс Плюс, ЖКХ, кредит") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                if (!exists && subscription && name.isBlank()) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        app.calstats.work.SUB_CATALOG.forEach { n -> FilterChip(selected = false, onClick = { name = n }, label = { Text(n) }) }
+                    }
+                }
                 OutlinedTextField(amount, { v -> amount = v.filter { it.isDigit() || it == ',' || it == '.' } }, label = { Text("Сумма, ₽") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -676,6 +682,12 @@ private fun RecurringDialog(vm: MainViewModel, r: Recurring, onDismiss: () -> Un
                     Checkbox(subscription, { subscription = it })
                     Text("Подписка")
                 }
+                if (subscription) Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { pickDate(ctx, trial ?: vm.today.plusDays(7)) { trial = it; next = it } }) {
+                        Text(trial?.let { "Пробный период до ${Fmt.dateNoYear(it)}" } ?: "Есть пробный период")
+                    }
+                    if (trial != null) TextButton(onClick = { trial = null }) { Text("Убрать") }
+                }
                 if (exists) Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(active, { active = it })
                     Text("Активен")
@@ -686,7 +698,8 @@ private fun RecurringDialog(vm: MainViewModel, r: Recurring, onDismiss: () -> Un
             TextButton(enabled = name.isNotBlank() && (SplitMath.parse(amount) ?: 0) > 0, onClick = {
                 vm.updateWork {
                     FinanceOps.upsertRecurring(it, r.copy(name = name.trim(), amount = SplitMath.parse(amount) ?: 0, period = period,
-                        nextDate = next.toString(), accountId = account, categoryId = category, subscription = subscription, active = active))
+                        nextDate = next.toString(), accountId = account, categoryId = category, subscription = subscription, active = active,
+                        trialUntil = trial?.takeIf { subscription }?.toString()))
                 }
                 onDismiss()
             }) { Text("Сохранить") }

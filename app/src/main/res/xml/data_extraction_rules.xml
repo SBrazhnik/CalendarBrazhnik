@@ -4,6 +4,8 @@
     <cloud-backup>
         <include domain="sharedpref" path="." />
         <include domain="file" path="." />
+        <!-- Фото документов в облако не уходят, только при прямом переносе на новый телефон -->
+        <exclude domain="file" path="docs/" />
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" path="." />

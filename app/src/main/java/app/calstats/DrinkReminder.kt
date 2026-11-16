@@ -159,5 +159,6 @@ class DrinkReminderReceiver : BroadcastReceiver() {
 class DrinkBootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         DrinkReminder.schedule(ctx)
+        DocsReminder.schedule(ctx)
     }
 }

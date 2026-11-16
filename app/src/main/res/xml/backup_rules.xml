@@ -3,4 +3,6 @@
 <full-backup-content>
     <include domain="sharedpref" path="." />
     <include domain="file" path="." />
+    <!-- Фото документов в облако не уходят -->
+    <exclude domain="file" path="docs/" />
 </full-backup-content>

@@ -27,6 +27,11 @@ import app.calstats.ui.PermissionScreen
 import app.calstats.ui.SettingsScreen
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        /** Открыть модуль из уведомления. */
+        const val EXTRA_TAB = "tab"
+    }
+
     private val vm: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +60,12 @@ class MainActivity : ComponentActivity() {
         handleShare(intent)
     }
 
+    override fun onStop() {
+        super.onStop()
+        // Документы снова закрываются, когда приложение уходит в фон (но не при выборе фото).
+        if (!vm.keepDocsUnlocked) vm.docsUnlocked = false
+    }
+
     override fun onResume() {
         super.onResume()
         vm.onResume()
@@ -62,6 +73,9 @@ class MainActivity : ComponentActivity() {
 
     /** Текст или ссылка из другого приложения (Samsung Notes, Keep, Яндекс, браузер, маркетплейс). */
     private fun handleShare(intent: Intent?) {
+        intent?.getStringExtra(EXTRA_TAB)?.let { t ->
+            Tab.entries.firstOrNull { it.name == t }?.takeIf { vm.isEnabled(it) }?.let { vm.stack.clear(); vm.stack.add(Screen.Main); vm.tab = it }
+        }
         if (intent?.action != Intent.ACTION_SEND) return
         val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() } ?: return
         val pkg = referrer?.host.orEmpty()
@@ -124,5 +138,6 @@ fun App(vm: MainViewModel) {
         Screen.Modules -> app.calstats.ui.ModulesScreen(vm, snackbar)
         is Screen.NoteEdit -> app.calstats.ui.NoteEditScreen(vm, screen.id, snackbar)
         is Screen.WishListDetail -> app.calstats.ui.WishListScreen(vm, screen.id, snackbar)
+        is Screen.DocEdit -> app.calstats.ui.DocEditScreen(vm, screen.id, snackbar)
     }
 }

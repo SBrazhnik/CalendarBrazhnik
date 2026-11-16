@@ -60,6 +60,7 @@ enum class Tab(val title: String, val description: String) {
     FINANCE("Финансы", "Счета, бюджеты, подписки, цели, импорт выписок"),
     HABITS("Привычки", "Ежедневные отметки, серии, учёт алкоголя"),
     HEALTH("Здоровье", "Питание, вода, вес, шаги и сон из Samsung Health"),
+    DOCS("Документы", "Паспорта, права, полисы, гарантии, подписки и их сроки"),
     MONEY("Расходы", "Общие чеки и кто кому должен"),
     ANALYSIS("Анализ", "Дни и часы по направлениям"),
     WISHES("Желания", "Списки желаний и подарков"),
@@ -87,6 +88,7 @@ sealed interface Screen {
         val presetTitle: String? = null,
     ) : Screen
     data object Colors : Screen
+    data class DocEdit(val id: String?) : Screen
     data class IssueDetail(val id: String) : Screen
     data object People : Screen
     data class ProjectEdit(val id: String?) : Screen
@@ -169,6 +171,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (Tab.FINANCE !in list) list.add((list.indexOf(Tab.TASKS) + 1).coerceIn(0, list.size), Tab.FINANCE)
             if (Tab.HABITS !in list) list.add((list.indexOf(Tab.FINANCE) + 1).coerceIn(0, list.size), Tab.HABITS)
             if (Tab.HEALTH !in list) list.add((list.indexOf(Tab.HABITS) + 1).coerceIn(0, list.size), Tab.HEALTH)
+            if (Tab.DOCS !in list) list.add((list.indexOf(Tab.HEALTH) + 1).coerceIn(0, list.size), Tab.DOCS)
             list + Tab.modules.filter { it !in list }
         },
     )
@@ -177,7 +180,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private set
     /** Модули, которые НЕ показываются в нижней панели (по умолчанию там первые четыре). */
     var unpinnedModules by mutableStateOf(
-        loadTabs("modules_unpinned", listOf(Tab.WISHES, Tab.NOTES, Tab.MONEY, Tab.HABITS, Tab.HEALTH)).toSet().let { saved ->
+        loadTabs("modules_unpinned", listOf(Tab.WISHES, Tab.NOTES, Tab.MONEY, Tab.HABITS, Tab.HEALTH, Tab.DOCS)).toSet().let { saved ->
             // Один раз освобождаем место в панели под Финансы: Расходы открываются с Главной и из Финансов.
             var r = saved
             if (!uiPrefs.getBoolean("migr_finance", false)) {
@@ -191,6 +194,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (!uiPrefs.getBoolean("migr_health", false)) {
                 uiPrefs.edit().putBoolean("migr_health", true).apply()
                 r = r + Tab.HEALTH
+            }
+            if (!uiPrefs.getBoolean("migr_docs", false)) {
+                uiPrefs.edit().putBoolean("migr_docs", true).apply()
+                r = r + Tab.DOCS
             }
             r
         },
@@ -328,6 +335,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------- Документы: защита отпечатком / PIN ----------
+    var docsLock by mutableStateOf(uiPrefs.getBoolean("docs_lock", false))
+        private set
+    /** Модуль разблокирован до ухода приложения в фон. */
+    var docsUnlocked by mutableStateOf(false)
+    /** На время выбора фото из галереи не закрываем модуль. */
+    var keepDocsUnlocked = false
+
+    fun changeDocsLock(on: Boolean) {
+        docsLock = on
+        docsUnlocked = true
+        uiPrefs.edit().putBoolean("docs_lock", on).apply()
+    }
+
     // ---------- Здоровье (Health Connect) ----------
     var healthStatus by mutableStateOf(HealthLink.Status.UNAVAILABLE)
         private set
@@ -361,6 +382,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         drinks = sobrietyStore.load()
         work = workStore.load()
         DrinkReminder.schedule(getApplication())
+        DocsReminder.schedule(getApplication())
         hasPermission = checkPermission()
         now = System.currentTimeMillis()
         today = LocalDate.now()

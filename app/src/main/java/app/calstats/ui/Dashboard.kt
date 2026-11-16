@@ -119,6 +119,7 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         Tab.FINANCE -> FinanceSummary(vm)
                         Tab.HABITS -> HabitsSummary(vm)
                         Tab.HEALTH -> HealthSummary(vm)
+                        Tab.DOCS -> DocsSummary(vm)
                         Tab.MONEY -> MoneySummary(vm)
                         Tab.ANALYSIS -> AnalysisSummary(vm)
                         Tab.WISHES -> WishesSummary(vm)

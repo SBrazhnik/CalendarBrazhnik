@@ -292,6 +292,7 @@ data class Workspace(
     val customFoods: List<FoodItem> = emptyList(),
     val waterLog: List<WaterEntry> = emptyList(),
     val weightLog: List<WeightEntry> = emptyList(),
+    val documents: List<Document> = emptyList(),
 ) {
     fun category(id: String?) = finCategories.firstOrNull { it.id == id }
     fun account(id: String?) = accounts.firstOrNull { it.id == id }

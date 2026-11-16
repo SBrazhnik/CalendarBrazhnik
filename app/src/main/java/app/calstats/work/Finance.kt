@@ -78,6 +78,8 @@ data class Recurring(
     val nextDate: String,
     val subscription: Boolean = true,
     val active: Boolean = true,
+    /** Пробный период: до этой даты бесплатно, потом начнутся списания. */
+    val trialUntil: String? = null,
 ) {
     val next: LocalDate get() = runCatching { LocalDate.parse(nextDate) }.getOrDefault(LocalDate.now())
     fun advanced(): Recurring = copy(
