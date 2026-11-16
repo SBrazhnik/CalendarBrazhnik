@@ -11,7 +11,7 @@ val buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
 
 android {
     namespace = "app.calstats"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "app.calstats.brazhnik"
