@@ -25,6 +25,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import app.calstats.widget.CalendarWidget
 import app.calstats.widget.TasksWidget
+import app.calstats.health.HealthLink
+import app.calstats.work.HealthSnapshot
 import app.calstats.work.Issue
 import app.calstats.work.NoteImport
 import app.calstats.work.PALETTE
@@ -57,6 +59,7 @@ enum class Tab(val title: String, val description: String) {
     TASKS("Задачи", "Проекты, доска, спринты, учёт времени"),
     FINANCE("Финансы", "Счета, бюджеты, подписки, цели, импорт выписок"),
     HABITS("Привычки", "Ежедневные отметки, серии, учёт алкоголя"),
+    HEALTH("Здоровье", "Питание, вода, вес, шаги и сон из Samsung Health"),
     MONEY("Расходы", "Общие чеки и кто кому должен"),
     ANALYSIS("Анализ", "Дни и часы по направлениям"),
     WISHES("Желания", "Списки желаний и подарков"),
@@ -165,6 +168,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Финансы встают сразу после Задач, остальные новые — в конец.
             if (Tab.FINANCE !in list) list.add((list.indexOf(Tab.TASKS) + 1).coerceIn(0, list.size), Tab.FINANCE)
             if (Tab.HABITS !in list) list.add((list.indexOf(Tab.FINANCE) + 1).coerceIn(0, list.size), Tab.HABITS)
+            if (Tab.HEALTH !in list) list.add((list.indexOf(Tab.HABITS) + 1).coerceIn(0, list.size), Tab.HEALTH)
             list + Tab.modules.filter { it !in list }
         },
     )
@@ -173,7 +177,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private set
     /** Модули, которые НЕ показываются в нижней панели (по умолчанию там первые четыре). */
     var unpinnedModules by mutableStateOf(
-        loadTabs("modules_unpinned", listOf(Tab.WISHES, Tab.NOTES, Tab.MONEY, Tab.HABITS)).toSet().let { saved ->
+        loadTabs("modules_unpinned", listOf(Tab.WISHES, Tab.NOTES, Tab.MONEY, Tab.HABITS, Tab.HEALTH)).toSet().let { saved ->
             // Один раз освобождаем место в панели под Финансы: Расходы открываются с Главной и из Финансов.
             var r = saved
             if (!uiPrefs.getBoolean("migr_finance", false)) {
@@ -183,6 +187,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (!uiPrefs.getBoolean("migr_habits", false)) {
                 uiPrefs.edit().putBoolean("migr_habits", true).apply()
                 r = r + Tab.HABITS
+            }
+            if (!uiPrefs.getBoolean("migr_health", false)) {
+                uiPrefs.edit().putBoolean("migr_health", true).apply()
+                r = r + Tab.HEALTH
             }
             r
         },
@@ -320,7 +328,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------- Здоровье (Health Connect) ----------
+    var healthStatus by mutableStateOf(HealthLink.Status.UNAVAILABLE)
+        private set
+    var healthGranted by mutableStateOf(0)
+        private set
+    var health by mutableStateOf<HealthSnapshot?>(null)
+        private set
+    var healthLoading by mutableStateOf(false)
+        private set
+    private var healthLoadedAt = 0L
+
+    fun refreshHealth(force: Boolean = false) {
+        if (!isEnabled(Tab.HEALTH)) return
+        if (!force && System.currentTimeMillis() - healthLoadedAt < 60_000) return
+        healthLoadedAt = System.currentTimeMillis()
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            healthStatus = runCatching { HealthLink.status(ctx) }.getOrDefault(HealthLink.Status.UNAVAILABLE)
+            if (healthStatus != HealthLink.Status.AVAILABLE) return@launch
+            val g = HealthLink.granted(ctx).count { it in HealthLink.permissions }
+            healthGranted = g
+            if (g == 0) return@launch
+            healthLoading = true
+            health = runCatching { withContext(Dispatchers.IO) { HealthLink.load(ctx) } }.getOrNull() ?: health
+            healthLoading = false
+        }
+    }
+
     fun onResume() {
+        refreshHealth()
         drinks = sobrietyStore.load()
         work = workStore.load()
         DrinkReminder.schedule(getApplication())

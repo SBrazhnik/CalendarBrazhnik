@@ -286,6 +286,12 @@ data class Workspace(
     val goals: List<Goal> = emptyList(),
     val habits: List<Habit> = emptyList(),
     val habitLogs: List<HabitLog> = emptyList(),
+    val healthProfile: HealthProfile? = null,
+    val foodLog: List<FoodEntry> = emptyList(),
+    val recentFoods: List<FoodItem> = emptyList(),
+    val customFoods: List<FoodItem> = emptyList(),
+    val waterLog: List<WaterEntry> = emptyList(),
+    val weightLog: List<WeightEntry> = emptyList(),
 ) {
     fun category(id: String?) = finCategories.firstOrNull { it.id == id }
     fun account(id: String?) = accounts.firstOrNull { it.id == id }
