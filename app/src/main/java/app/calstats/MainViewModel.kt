@@ -56,6 +56,7 @@ enum class Tab(val title: String, val description: String) {
     CALENDAR("Календарь", "События Google Календаря, учёт алкоголя"),
     TASKS("Задачи", "Проекты, доска, спринты, учёт времени"),
     FINANCE("Финансы", "Счета, бюджеты, подписки, цели, импорт выписок"),
+    HABITS("Привычки", "Ежедневные отметки, серии, учёт алкоголя"),
     MONEY("Расходы", "Общие чеки и кто кому должен"),
     ANALYSIS("Анализ", "Дни и часы по направлениям"),
     WISHES("Желания", "Списки желаний и подарков"),
@@ -155,6 +156,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val list = saved.filter { it.isModule }.toMutableList()
             // Финансы встают сразу после Задач, остальные новые — в конец.
             if (Tab.FINANCE !in list) list.add((list.indexOf(Tab.TASKS) + 1).coerceIn(0, list.size), Tab.FINANCE)
+            if (Tab.HABITS !in list) list.add((list.indexOf(Tab.FINANCE) + 1).coerceIn(0, list.size), Tab.HABITS)
             list + Tab.modules.filter { it !in list }
         },
     )
@@ -163,12 +165,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private set
     /** Модули, которые НЕ показываются в нижней панели (по умолчанию там первые четыре). */
     var unpinnedModules by mutableStateOf(
-        loadTabs("modules_unpinned", listOf(Tab.WISHES, Tab.NOTES, Tab.MONEY)).toSet().let { saved ->
+        loadTabs("modules_unpinned", listOf(Tab.WISHES, Tab.NOTES, Tab.MONEY, Tab.HABITS)).toSet().let { saved ->
             // Один раз освобождаем место в панели под Финансы: Расходы открываются с Главной и из Финансов.
+            var r = saved
             if (!uiPrefs.getBoolean("migr_finance", false)) {
                 uiPrefs.edit().putBoolean("migr_finance", true).apply()
-                saved + Tab.MONEY
-            } else saved
+                r = r + Tab.MONEY
+            }
+            if (!uiPrefs.getBoolean("migr_habits", false)) {
+                uiPrefs.edit().putBoolean("migr_habits", true).apply()
+                r = r + Tab.HABITS
+            }
+            r
         },
     )
         private set
@@ -581,6 +589,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         drinks = sobrietyStore.set(date, drank)
         CalendarWidget.refresh(getApplication())
         if (date == today.minusDays(1)) DrinkReminder.cancel(getApplication())
+    }
+
+    /** Показывать «Без алкоголя» среди привычек. */
+    var alcoholHabitShown by mutableStateOf(uiPrefs.getBoolean("alcohol_habit", true))
+        private set
+    fun showAlcoholHabit(v: Boolean) {
+        alcoholHabitShown = v
+        uiPrefs.edit().putBoolean("alcohol_habit", v).apply()
     }
 
     fun changeReminderEnabled(v: Boolean) {

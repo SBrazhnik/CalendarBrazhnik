@@ -284,6 +284,8 @@ data class Workspace(
     val budgets: List<Budget> = emptyList(),
     val recurrings: List<Recurring> = emptyList(),
     val goals: List<Goal> = emptyList(),
+    val habits: List<Habit> = emptyList(),
+    val habitLogs: List<HabitLog> = emptyList(),
 ) {
     fun category(id: String?) = finCategories.firstOrNull { it.id == id }
     fun account(id: String?) = accounts.firstOrNull { it.id == id }
