@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand">#E4572E</color>
-    <color name="brand_light">#F08A68</color>
-    <color name="navy">#171A33</color>
-    <color name="ic_launcher_background">#171A33</color>
+    <!-- «Зелёный ритм»: тёмно-синий, лаванда и тёмный зелёный -->
+    <color name="ink">#121721</color>
+    <color name="olive">#34553F</color>
+    <color name="olive_light">#8FBF9F</color>
+    <color name="lavender">#C9B8FF</color>
+    <color name="brand">#34553F</color>
+    <color name="brand_light">#8FBF9F</color>
+    <color name="navy">#121721</color>
+    <color name="ic_launcher_background">#121721</color>
 </resources>

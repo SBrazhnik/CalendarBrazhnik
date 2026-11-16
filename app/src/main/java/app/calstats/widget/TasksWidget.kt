@@ -49,12 +49,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
-private val T_BG = ColorProvider(day = Color(0xFFF7F7FA), night = Color(0xFF171A33))
-private val T_FG = ColorProvider(day = Color(0xFF171A33), night = Color(0xFFEEF0F4))
+private val T_BG = ColorProvider(day = Color(0xFFF6F6F2), night = Color(0xFF121721))
+private val T_FG = ColorProvider(day = Color(0xFF121721), night = Color(0xFFEEF0F4))
 private val T_MUTED = ColorProvider(day = Color(0xFF8A8DA3), night = Color(0xFF8D91B0))
-private val T_ACCENT = ColorProvider(day = Color(0xFFE4572E), night = Color(0xFFF08A68))
+private val T_ACCENT = ColorProvider(day = Color(0xFF34553F), night = Color(0xFF8FBF9F))
 private val T_RED = ColorProvider(day = Color(0xFFD64545), night = Color(0xFFFF7A7A))
-private val T_ROW = ColorProvider(day = Color(0xFFFFFFFF), night = Color(0xFF22264A))
+private val T_ROW = ColorProvider(day = Color(0xFFFFFFFF), night = Color(0xFF1C2232))
 
 private class TaskRow(val id: String, val key: String, val title: String, val due: LocalDate?, val status: Status, val priorityArrow: String, val priorityColor: Long)
 

@@ -41,7 +41,8 @@ fun PermissionScreen(onGranted: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AppLogo(160.dp)
+            AppLogo(112.dp)
+            Text("Зелёный ритм", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
             Text("Нужен доступ к календарю", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
             Text(
                 "Приложение считает дни и часы по событиям вашего Google Календаря и добавляет в него новые " +

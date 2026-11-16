@@ -64,13 +64,14 @@ import app.calstats.Tab
 
 /** Цвет модуля — для плиток и значков. */
 fun moduleColor(t: Tab): Color = when (t) {
-    Tab.HOME -> Color(0xFF171A33)
-    Tab.CALENDAR -> Color(0xFF4C7DFF)
-    Tab.TASKS -> Color(0xFF22A06B)
-    Tab.MONEY -> Color(0xFFE5A100)
-    Tab.ANALYSIS -> Color(0xFF8270DB)
-    Tab.WISHES -> Color(0xFFE4572E)
-    Tab.NOTES -> Color(0xFF2FB5C6)
+    Tab.HOME -> Color(0xFF121721)
+    Tab.CALENDAR -> Color(0xFF7C6BD6)
+    Tab.TASKS -> Color(0xFF34553F)
+    Tab.FINANCE -> Color(0xFF2E8B6B)
+    Tab.MONEY -> Color(0xFFC9963A)
+    Tab.ANALYSIS -> Color(0xFF4F6BD8)
+    Tab.WISHES -> Color(0xFFD9667A)
+    Tab.NOTES -> Color(0xFF3FA3B5)
 }
 
 @Composable
@@ -81,7 +82,8 @@ fun ModuleIcon(t: Tab, selected: Boolean = false, size: Dp = 24.dp, tint: Color?
         Tab.HOME -> Icon(if (selected) Icons.Filled.Home else Icons.Outlined.Home, null, m, tint = c)
         Tab.CALENDAR -> Icon(if (selected) Icons.Filled.DateRange else Icons.Outlined.DateRange, null, m, tint = c)
         Tab.TASKS -> Icon(if (selected) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle, null, m, tint = c)
-        Tab.MONEY -> Icon(painterResource(R.drawable.ic_tab_money), null, m, tint = c)
+        Tab.FINANCE -> Icon(painterResource(R.drawable.ic_tab_money), null, m, tint = c)
+        Tab.MONEY -> Icon(painterResource(R.drawable.ic_group), null, m, tint = c)
         Tab.ANALYSIS -> Icon(painterResource(R.drawable.ic_tab_stats), null, m, tint = c)
         Tab.WISHES -> Icon(painterResource(R.drawable.ic_tab_gift), null, m, tint = c)
         Tab.NOTES -> Icon(painterResource(R.drawable.ic_tab_notes), null, m, tint = c)

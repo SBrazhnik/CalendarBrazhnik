@@ -158,7 +158,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                     }
                     TextButton(onClick = { vm.testReminder() }) { Text("Показать уведомление сейчас") }
                     Text(
-                        "На Samsung, если вопрос не приходит: Настройки → Приложения → Личный календарь → " +
+                        "На Samsung, если вопрос не приходит: Настройки → Приложения → Зелёный ритм → " +
                             "Батарея → «Без ограничений».",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

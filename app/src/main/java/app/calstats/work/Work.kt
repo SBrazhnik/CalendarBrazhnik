@@ -278,15 +278,24 @@ data class Workspace(
     val wishLists: List<WishList> = emptyList(),
     val wishes: List<Wish> = emptyList(),
     val notes: List<Note> = emptyList(),
+    val accounts: List<Account> = emptyList(),
+    val finCategories: List<FinCategory> = emptyList(),
+    val transactions: List<Transaction> = emptyList(),
+    val budgets: List<Budget> = emptyList(),
+    val recurrings: List<Recurring> = emptyList(),
+    val goals: List<Goal> = emptyList(),
 ) {
+    fun category(id: String?) = finCategories.firstOrNull { it.id == id }
+    fun account(id: String?) = accounts.firstOrNull { it.id == id }
+
     fun person(id: String?): Person? = when (id) {
         null -> null
-        ME -> Person(ME, meName, 0xFFE4572E.toInt())
+        ME -> Person(ME, meName, 0xFF34553F.toInt())
         else -> people.firstOrNull { it.id == id }
     }
 
     /** «Я» + все люди. */
-    val everyone: List<Person> get() = listOf(Person(ME, meName, 0xFFE4572E.toInt())) + people
+    val everyone: List<Person> get() = listOf(Person(ME, meName, 0xFF34553F.toInt())) + people
 
     fun project(id: String?) = projects.firstOrNull { it.id == id }
     fun issue(id: String?) = issues.firstOrNull { it.id == id }

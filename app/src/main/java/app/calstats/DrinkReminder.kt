@@ -82,7 +82,7 @@ object DrinkReminder {
         )
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
-            .setColor(0xFFE4572E.toInt())
+            .setColor(0xFF34553F.toInt())
             .setContentTitle("Пили $dayWord?")
             .setContentText("${Fmt.dayTitle(date, today)} — ответьте одним нажатием")
             .setStyle(
@@ -115,7 +115,7 @@ object DrinkReminder {
         val text = if (drank) "Записано: пил. Счётчик начнётся заново." else "Записано: не пил. ${Sobriety.streakText(summary)}."
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_notify)
-            .setColor(0xFFE4572E.toInt())
+            .setColor(0xFF34553F.toInt())
             .setContentTitle(if (drank) "Отмечено" else "Отлично!")
             .setContentText(text)
             .setTimeoutAfter(6000)

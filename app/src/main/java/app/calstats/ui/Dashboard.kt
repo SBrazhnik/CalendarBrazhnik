@@ -36,7 +36,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,6 +78,8 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         else -> "Доброй ночи"
     }
     val name = vm.work.meName.takeIf { it.isNotBlank() && it != "Я" }
+    var txSheet by remember { mutableStateOf<app.calstats.work.Transaction?>(null) }
+    txSheet?.let { t -> TxSheet(vm, t) { txSheet = null } }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -104,12 +109,14 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item { QuickActions(vm) { txSheet = it } }
             item { QuickLaunch(vm) }
             vm.enabledModules.forEach { t ->
                 item(key = t.name) {
                     when (t) {
                         Tab.CALENDAR -> CalendarSummary(vm)
                         Tab.TASKS -> TasksSummary(vm)
+                        Tab.FINANCE -> FinanceSummary(vm)
                         Tab.MONEY -> MoneySummary(vm)
                         Tab.ANALYSIS -> AnalysisSummary(vm)
                         Tab.WISHES -> WishesSummary(vm)
@@ -402,4 +409,89 @@ fun nextOccurrence(d: java.time.LocalDate?, today: java.time.LocalDate, yearly: 
     var n = d.withYear(today.year)
     if (n.isBefore(today)) n = n.plusYears(1)
     return n
+}
+
+/** Быстрые действия «Мой день»: записать трату, задачу, событие, заметку. */
+@Composable
+private fun QuickActions(vm: MainViewModel, onTx: (app.calstats.work.Transaction) -> Unit) {
+    data class A(val t: Tab, val label: String, val run: () -> Unit)
+    val actions = buildList {
+        if (vm.isEnabled(Tab.FINANCE)) add(A(Tab.FINANCE, "Трата") {
+            val acc = vm.work.accounts.firstOrNull { !it.archived }
+            if (acc == null) {
+                vm.tab = Tab.FINANCE
+                vm.message = "Сначала добавьте счёт"
+            } else {
+                if (vm.work.finCategories.isEmpty()) vm.updateWork { app.calstats.work.FinanceOps.ensureDefaults(it) }
+                onTx(app.calstats.work.Transaction(app.calstats.work.newId(), app.calstats.work.TxType.EXPENSE, 0, acc.id, date = vm.today.toString()))
+            }
+        })
+        if (vm.isEnabled(Tab.CALENDAR)) add(A(Tab.CALENDAR, "Событие") { vm.push(Screen.Edit(presetDate = vm.today)) })
+        if (vm.isEnabled(Tab.TASKS)) add(A(Tab.TASKS, "Задача") {
+            vm.selectTaskView("ALL")
+            vm.tab = Tab.TASKS
+            vm.message = "Нажмите «Создать»"
+        })
+        if (vm.isEnabled(Tab.NOTES)) add(A(Tab.NOTES, "Заметка") {
+            val n = app.calstats.work.Note(app.calstats.work.newId())
+            vm.updateWork { app.calstats.work.WorkOps.upsertNote(it, n) }
+            vm.tab = Tab.NOTES
+            vm.push(Screen.NoteEdit(n.id))
+        })
+    }
+    if (actions.isEmpty()) return
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        actions.forEach { a ->
+            Card(
+                onClick = a.run,
+                modifier = Modifier.weight(1f),
+                colors = CardDefaults.cardColors(containerColor = moduleColor(a.t).copy(alpha = 0.16f)),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    ModuleIcon(a.t, true, 22.dp, moduleColor(a.t))
+                    Spacer(Modifier.height(4.dp))
+                    Text("+ " + a.label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FinanceSummary(vm: MainViewModel) {
+    val w = vm.work
+    val month = java.time.YearMonth.from(vm.today)
+    val txs = app.calstats.work.FinanceMath.inMonth(w.transactions, month)
+    val spentToday = w.transactions.filter { it.type == app.calstats.work.TxType.EXPENSE && it.localDate == vm.today }.sumOf { it.amount }
+    val spentMonth = app.calstats.work.FinanceMath.expense(txs)
+    val limit = w.budgets.sumOf { it.monthlyLimit }
+    val upcoming = w.recurrings.filter { it.active && !it.next.isAfter(vm.today.plusDays(3)) }.sortedBy { it.next }
+    SummaryCard(Tab.FINANCE, vm, subtitle = if (w.accounts.isEmpty()) null else SplitMath.money(app.calstats.work.FinanceMath.total(w))) {
+        if (w.accounts.isEmpty()) {
+            Muted("Добавьте счета и записывайте траты — здесь появится сводка")
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                MiniNumber(SplitMath.money(spentToday), "сегодня")
+                MiniNumber(SplitMath.money(spentMonth), "за месяц")
+                if (limit > 0) MiniNumber(
+                    SplitMath.money((limit - w.budgets.sumOf { b -> txs.filter { it.type == app.calstats.work.TxType.EXPENSE && it.categoryId == b.categoryId }.sumOf { it.amount } }).coerceAtLeast(0)),
+                    "осталось в бюджете",
+                )
+            }
+            upcoming.take(2).forEach { r ->
+                val d = ChronoUnit.DAYS.between(vm.today, r.next)
+                Text(
+                    "🔔 ${r.name} — ${SplitMath.money(r.amount)}, " + when {
+                        d < 0 -> "просрочен"
+                        d == 0L -> "сегодня"
+                        d == 1L -> "завтра"
+                        else -> "через ${Fmt.days(d)}"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (d <= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+    }
 }

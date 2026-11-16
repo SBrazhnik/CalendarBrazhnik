@@ -55,6 +55,7 @@ enum class Tab(val title: String, val description: String) {
     HOME("Главная", ""),
     CALENDAR("Календарь", "События Google Календаря, учёт алкоголя"),
     TASKS("Задачи", "Проекты, доска, спринты, учёт времени"),
+    FINANCE("Финансы", "Счета, бюджеты, подписки, цели, импорт выписок"),
     MONEY("Расходы", "Общие чеки и кто кому должен"),
     ANALYSIS("Анализ", "Дни и часы по направлениям"),
     WISHES("Желания", "Списки желаний и подарков"),
@@ -150,13 +151,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Порядок модулей (новые модули добавляются в конец). */
     var moduleOrder by mutableStateOf(
-        loadTabs("modules_order", Tab.modules).let { saved -> saved.filter { it.isModule } + Tab.modules.filter { it !in saved } },
+        loadTabs("modules_order", Tab.modules).let { saved ->
+            val list = saved.filter { it.isModule }.toMutableList()
+            // Финансы встают сразу после Задач, остальные новые — в конец.
+            if (Tab.FINANCE !in list) list.add((list.indexOf(Tab.TASKS) + 1).coerceIn(0, list.size), Tab.FINANCE)
+            list + Tab.modules.filter { it !in list }
+        },
     )
         private set
     var disabledModules by mutableStateOf(loadTabs("modules_disabled", emptyList()).toSet())
         private set
     /** Модули, которые НЕ показываются в нижней панели (по умолчанию там первые четыре). */
-    var unpinnedModules by mutableStateOf(loadTabs("modules_unpinned", listOf(Tab.WISHES, Tab.NOTES)).toSet())
+    var unpinnedModules by mutableStateOf(
+        loadTabs("modules_unpinned", listOf(Tab.WISHES, Tab.NOTES, Tab.MONEY)).toSet().let { saved ->
+            // Один раз освобождаем место в панели под Финансы: Расходы открываются с Главной и из Финансов.
+            if (!uiPrefs.getBoolean("migr_finance", false)) {
+                uiPrefs.edit().putBoolean("migr_finance", true).apply()
+                saved + Tab.MONEY
+            } else saved
+        },
+    )
         private set
 
     val enabledModules: List<Tab> get() = moduleOrder.filter { it !in disabledModules }
