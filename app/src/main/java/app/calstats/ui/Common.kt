@@ -50,63 +50,103 @@ import app.calstats.R
 import app.calstats.PeriodType
 import java.time.LocalDate
 
+/** Палитры тем: строгие «интерьерные» сочетания. */
+private val LinenScheme = lightColorScheme(
+    primary = Color(0xFF1F3A2B),
+    onPrimary = Color(0xFFF4F1EA),
+    primaryContainer = Color(0xFFDCE5DA),
+    onPrimaryContainer = Color(0xFF0F1F17),
+    secondary = Color(0xFF1F3A2B),
+    onSecondary = Color(0xFFF4F1EA),
+    secondaryContainer = Color(0xFFF1E2CF),
+    onSecondaryContainer = Color(0xFF3A2414),
+    tertiary = Color(0xFFC27B44),
+    tertiaryContainer = Color(0xFFF1E2CF),
+    onTertiaryContainer = Color(0xFF3A2414),
+    background = Color(0xFFF4F1EA),
+    onBackground = Color(0xFF1B1F1A),
+    surface = Color(0xFFF4F1EA),
+    onSurface = Color(0xFF1B1F1A),
+    onSurfaceVariant = Color(0xFF6B6A60),
+    surfaceVariant = Color(0xFFE6E0D3),
+    surfaceContainerHighest = Color(0xFFE3DDCF),
+    surfaceContainerHigh = Color(0xFFE9E4D8),
+    surfaceContainer = Color(0xFFFBF9F4),
+    surfaceContainerLow = Color(0xFFF7F4EE),
+    outline = Color(0xFFB8B0A0),
+    outlineVariant = Color(0xFFDDD6C8),
+    error = Color(0xFFB3261E),
+)
+
+private val GraphiteScheme = darkColorScheme(
+    primary = Color(0xFF9DBFA6),
+    onPrimary = Color(0xFF10241A),
+    primaryContainer = Color(0xFF2F3A33),
+    onPrimaryContainer = Color(0xFFD5E6D9),
+    secondary = Color(0xFFC9A46A),
+    onSecondary = Color(0xFF241A0C),
+    secondaryContainer = Color(0xFF3A3122),
+    onSecondaryContainer = Color(0xFFF0DFC2),
+    tertiary = Color(0xFFC9A46A),
+    tertiaryContainer = Color(0xFF332C21),
+    onTertiaryContainer = Color(0xFFF0DFC2),
+    background = Color(0xFF141615),
+    onBackground = Color(0xFFECE8E0),
+    surface = Color(0xFF141615),
+    onSurface = Color(0xFFECE8E0),
+    onSurfaceVariant = Color(0xFFA29E95),
+    surfaceVariant = Color(0xFF2A2D2B),
+    surfaceContainerHighest = Color(0xFF303331),
+    surfaceContainerHigh = Color(0xFF2A2D2B),
+    surfaceContainer = Color(0xFF1E201F),
+    surfaceContainerLow = Color(0xFF191B1A),
+    outline = Color(0xFF5A5D58),
+    outlineVariant = Color(0xFF383B38),
+    error = Color(0xFFFF8A80),
+)
+
+private val ForestScheme = darkColorScheme(
+    primary = Color(0xFFD4A960),
+    onPrimary = Color(0xFF2A1F0B),
+    primaryContainer = Color(0xFF2A4434),
+    onPrimaryContainer = Color(0xFFEDE6D6),
+    secondary = Color(0xFFE8DCC2),
+    onSecondary = Color(0xFF12241A),
+    secondaryContainer = Color(0xFF2A4434),
+    onSecondaryContainer = Color(0xFFEDE6D6),
+    tertiary = Color(0xFFE0954F),
+    tertiaryContainer = Color(0xFF3A3524),
+    onTertiaryContainer = Color(0xFFF3E4C8),
+    background = Color(0xFF0F1F17),
+    onBackground = Color(0xFFEDE6D6),
+    surface = Color(0xFF0F1F17),
+    onSurface = Color(0xFFEDE6D6),
+    onSurfaceVariant = Color(0xFFA9B3A4),
+    surfaceVariant = Color(0xFF243A2D),
+    surfaceContainerHighest = Color(0xFF26402F),
+    surfaceContainerHigh = Color(0xFF1F3528),
+    surfaceContainer = Color(0xFF16291F),
+    surfaceContainerLow = Color(0xFF13241B),
+    outline = Color(0xFF4F6656),
+    outlineVariant = Color(0xFF2C4334),
+    error = Color(0xFFFF8A80),
+)
+
+/** Тёмная ли выбранная тема (для строки состояния и фона заметок). */
 @Composable
-fun AppTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    // «Зелёный ритм»: глубокий тёмно-синий, лаванда и тёмный зелёный (как Green Shadow у Galaxy Z Fold 8 Ultra)
-    val scheme = if (dark) {
-        darkColorScheme(
-            primary = Color(0xFF8FBF9F),
-            onPrimary = Color(0xFF0E2416),
-            primaryContainer = Color(0xFF2F4F3E),
-            onPrimaryContainer = Color(0xFFCFE8D7),
-            secondary = Color(0xFFC9B8FF),
-            onSecondary = Color(0xFF231A4A),
-            secondaryContainer = Color(0xFF3A3264),
-            onSecondaryContainer = Color(0xFFE8E0FF),
-            tertiary = Color(0xFFC9B8FF),
-            tertiaryContainer = Color(0xFF2E2A52),
-            onTertiaryContainer = Color(0xFFE8E0FF),
-            background = Color(0xFF121721),
-            onBackground = Color(0xFFEEF0F7),
-            surface = Color(0xFF121721),
-            onSurface = Color(0xFFEEF0F7),
-            onSurfaceVariant = Color(0xFFA3A9C0),
-            surfaceVariant = Color(0xFF262D42),
-            surfaceContainerHighest = Color(0xFF2A3148),
-            surfaceContainerHigh = Color(0xFF232A3F),
-            surfaceContainer = Color(0xFF1C2232),
-            surfaceContainerLow = Color(0xFF171C29),
-            outline = Color(0xFF4A5370),
-            outlineVariant = Color(0xFF323A52),
-            error = Color(0xFFFF8A80),
-        )
-    } else {
-        lightColorScheme(
-            primary = Color(0xFF34553F),
-            onPrimary = Color.White,
-            primaryContainer = Color(0xFFD3E3D6),
-            onPrimaryContainer = Color(0xFF0E2416),
-            secondary = Color(0xFF1D2333),
-            onSecondary = Color.White,
-            secondaryContainer = Color(0xFFE8E2FF),
-            onSecondaryContainer = Color(0xFF2A2160),
-            tertiary = Color(0xFF6B5BC4),
-            tertiaryContainer = Color(0xFFE8E2FF),
-            onTertiaryContainer = Color(0xFF2A2160),
-            background = Color(0xFFF6F6F2),
-            onBackground = Color(0xFF121721),
-            surface = Color(0xFFF6F6F2),
-            onSurface = Color(0xFF121721),
-            onSurfaceVariant = Color(0xFF5B6275),
-            surfaceVariant = Color(0xFFE6E7E0),
-            surfaceContainerHighest = Color(0xFFE4E5DD),
-            surfaceContainerHigh = Color(0xFFEBECE5),
-            surfaceContainer = Color(0xFFEFF0EA),
-            surfaceContainerLow = Color(0xFFF3F4EE),
-            outline = Color(0xFF8A8F80),
-            outlineVariant = Color(0xFFD3D5CB),
-        )
+fun isDarkTheme(mode: app.calstats.ThemeMode): Boolean = when (mode) {
+    app.calstats.ThemeMode.LIGHT -> false
+    app.calstats.ThemeMode.DARK, app.calstats.ThemeMode.FOREST -> true
+    app.calstats.ThemeMode.SYSTEM -> isSystemInDarkTheme()
+}
+
+@Composable
+fun AppTheme(mode: app.calstats.ThemeMode = app.calstats.ThemeMode.SYSTEM, content: @Composable () -> Unit) {
+    val scheme = when (mode) {
+        app.calstats.ThemeMode.LIGHT -> LinenScheme
+        app.calstats.ThemeMode.DARK -> GraphiteScheme
+        app.calstats.ThemeMode.FOREST -> ForestScheme
+        app.calstats.ThemeMode.SYSTEM -> if (isSystemInDarkTheme()) ForestScheme else LinenScheme
     }
     val shapes = Shapes(
         extraSmall = RoundedCornerShape(8.dp),

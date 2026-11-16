@@ -95,6 +95,14 @@ sealed interface Screen {
     data class WishListDetail(val id: String) : Screen
 }
 
+/** Тема оформления. */
+enum class ThemeMode(val title: String, val description: String) {
+    SYSTEM("Как в системе", "Днём «Лён», ночью «Лес»"),
+    LIGHT("Лён", "Светлая: льняной фон, глубокий зелёный"),
+    DARK("Графит", "Тёмная: графит, шалфей и латунь"),
+    FOREST("Лес", "Тёмно-зелёная: лес, латунь и пергамент"),
+}
+
 /** Текст, присланный из другого приложения через «Поделиться». */
 data class SharedText(val text: String, val subject: String?, val source: String)
 
@@ -589,6 +597,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         drinks = sobrietyStore.set(date, drank)
         CalendarWidget.refresh(getApplication())
         if (date == today.minusDays(1)) DrinkReminder.cancel(getApplication())
+    }
+
+    var themeMode by mutableStateOf(
+        runCatching { ThemeMode.valueOf(uiPrefs.getString("theme", null) ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM),
+    )
+        private set
+    fun changeTheme(t: ThemeMode) {
+        themeMode = t
+        uiPrefs.edit().putString("theme", t.name).apply()
     }
 
     /** Показывать «Без алкоголя» среди привычек. */

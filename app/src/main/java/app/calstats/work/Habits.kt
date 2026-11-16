@@ -111,7 +111,7 @@ object HabitOps {
 /** Готовые привычки для быстрого старта. */
 val HABIT_TEMPLATES = listOf(
     Habit("t1", "Вода", "💧", 0xFF3FA3B5.toInt(), HabitKind.DO, 8, "стаканов"),
-    Habit("t2", "Зарядка", "🤸", 0xFF34553F.toInt()),
+    Habit("t2", "Зарядка", "🤸", 0xFF1F3A2B.toInt()),
     Habit("t3", "Чтение", "📖", 0xFF7C6BD6.toInt(), target = 1, unit = "20 минут"),
     Habit("t4", "10 000 шагов", "🚶", 0xFF2E8B6B.toInt()),
     Habit("t5", "Сон до 23:00", "😴", 0xFF4F6BD8.toInt()),

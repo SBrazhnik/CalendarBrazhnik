@@ -34,7 +34,17 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (savedInstanceState == null) handleShare(intent)
         setContent {
-            AppTheme {
+            val dark = app.calstats.ui.isDarkTheme(vm.themeMode)
+            androidx.compose.runtime.LaunchedEffect(dark) {
+                // Значки строки состояния — под выбранную тему, а не под системную.
+                enableEdgeToEdge(
+                    statusBarStyle = if (dark) androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    else androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+                    navigationBarStyle = if (dark) androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    else androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+                )
+            }
+            AppTheme(vm.themeMode) {
                 App(vm)
             }
         }

@@ -4,6 +4,11 @@ package app.calstats.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -96,6 +101,46 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Section("Оформление") {
+                app.calstats.ThemeMode.entries.forEach { t ->
+                    val sw = when (t) {
+                        app.calstats.ThemeMode.SYSTEM -> listOf(0xFFF4F1EA, 0xFF1F3A2B, 0xFF0F1F17, 0xFFD4A960)
+                        app.calstats.ThemeMode.LIGHT -> listOf(0xFFF4F1EA, 0xFFFBF9F4, 0xFF1F3A2B, 0xFFC27B44)
+                        app.calstats.ThemeMode.DARK -> listOf(0xFF141615, 0xFF2A2D2B, 0xFF9DBFA6, 0xFFC9A46A)
+                        app.calstats.ThemeMode.FOREST -> listOf(0xFF0F1F17, 0xFF1F3528, 0xFFD4A960, 0xFFE8DCC2)
+                    }
+                    val selected = vm.themeMode == t
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+                            .clickable { vm.changeTheme(t) }
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row {
+                            sw.forEach { c ->
+                                androidx.compose.foundation.layout.Box(
+                                    Modifier
+                                        .size(22.dp)
+                                        .clip(androidx.compose.foundation.shape.CircleShape)
+                                        .background(androidx.compose.ui.graphics.Color(c))
+                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.CircleShape),
+                                )
+                                Spacer(Modifier.width(2.dp))
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(t.title, style = MaterialTheme.typography.titleSmall)
+                            Text(t.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        androidx.compose.material3.RadioButton(selected = selected, onClick = { vm.changeTheme(t) })
+                    }
+                }
+            }
+
             Section("Модули") {
                 Text(
                     "Включено: " + vm.enabledModules.joinToString(", ") { it.title },

@@ -2,11 +2,11 @@
 <resources>
     <!-- «Зелёный ритм»: тёмно-синий, лаванда и тёмный зелёный -->
     <color name="ink">#121721</color>
-    <color name="olive">#34553F</color>
-    <color name="olive_light">#8FBF9F</color>
-    <color name="lavender">#C9B8FF</color>
-    <color name="brand">#34553F</color>
-    <color name="brand_light">#8FBF9F</color>
+    <color name="olive">#1F3A2B</color>
+    <color name="olive_light">#9DBFA6</color>
+    <color name="lavender">#D4A960</color>
+    <color name="brand">#1F3A2B</color>
+    <color name="brand_light">#9DBFA6</color>
     <color name="navy">#121721</color>
-    <color name="ic_launcher_background">#34553F</color>
+    <color name="ic_launcher_background">#1F3A2B</color>
 </resources>

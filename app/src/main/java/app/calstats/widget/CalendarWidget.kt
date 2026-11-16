@@ -52,10 +52,10 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
-private val BG = ColorProvider(day = Color(0xFFF6F6F2), night = Color(0xFF121721))
-private val FG = ColorProvider(day = Color(0xFF121721), night = Color(0xFFEEF0F4))
-private val MUTED = ColorProvider(day = Color(0xFF8A8DA3), night = Color(0xFF8D91B0))
-private val ACCENT = ColorProvider(day = Color(0xFF34553F), night = Color(0xFF8FBF9F))
+private val BG = ColorProvider(day = Color(0xFFF4F1EA), night = Color(0xFF0F1F17))
+private val FG = ColorProvider(day = Color(0xFF0F1F17), night = Color(0xFFEDE6D6))
+private val MUTED = ColorProvider(day = Color(0xFF6B6A60), night = Color(0xFFA9B3A4))
+private val ACCENT = ColorProvider(day = Color(0xFF1F3A2B), night = Color(0xFFD4A960))
 private val ON_ACCENT = ColorProvider(day = Color.White, night = Color(0xFF0E2416))
 private val SOBER = ColorProvider(day = Color(0xFF2FA36B), night = Color(0xFF2FA36B))
 private val DRANK = ColorProvider(day = Color(0xFFD64545), night = Color(0xFFD64545))

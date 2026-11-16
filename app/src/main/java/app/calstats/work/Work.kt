@@ -292,12 +292,12 @@ data class Workspace(
 
     fun person(id: String?): Person? = when (id) {
         null -> null
-        ME -> Person(ME, meName, 0xFF34553F.toInt())
+        ME -> Person(ME, meName, 0xFF1F3A2B.toInt())
         else -> people.firstOrNull { it.id == id }
     }
 
     /** «Я» + все люди. */
-    val everyone: List<Person> get() = listOf(Person(ME, meName, 0xFF34553F.toInt())) + people
+    val everyone: List<Person> get() = listOf(Person(ME, meName, 0xFF1F3A2B.toInt())) + people
 
     fun project(id: String?) = projects.firstOrNull { it.id == id }
     fun issue(id: String?) = issues.firstOrNull { it.id == id }

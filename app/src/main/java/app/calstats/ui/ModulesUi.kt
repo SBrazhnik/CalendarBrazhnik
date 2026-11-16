@@ -64,15 +64,16 @@ import app.calstats.Tab
 
 /** Цвет модуля — для плиток и значков. */
 fun moduleColor(t: Tab): Color = when (t) {
-    Tab.HOME -> Color(0xFF121721)
-    Tab.CALENDAR -> Color(0xFF7C6BD6)
-    Tab.TASKS -> Color(0xFF34553F)
-    Tab.FINANCE -> Color(0xFF2E8B6B)
-    Tab.HABITS -> Color(0xFFE07B39)
-    Tab.MONEY -> Color(0xFFC9963A)
-    Tab.ANALYSIS -> Color(0xFF4F6BD8)
-    Tab.WISHES -> Color(0xFFD9667A)
-    Tab.NOTES -> Color(0xFF3FA3B5)
+    // Приглушённые «интерьерные» тона: читаются и на льне, и на графите, и на тёмно-зелёном
+    Tab.HOME -> Color(0xFF1F3A2B)
+    Tab.CALENDAR -> Color(0xFF4A6A8A)
+    Tab.TASKS -> Color(0xFF2F5D46)
+    Tab.FINANCE -> Color(0xFFB08A4E)
+    Tab.HABITS -> Color(0xFFB5653A)
+    Tab.MONEY -> Color(0xFF8C5A3C)
+    Tab.ANALYSIS -> Color(0xFF6C4F7A)
+    Tab.WISHES -> Color(0xFFB0656B)
+    Tab.NOTES -> Color(0xFF3F7C7A)
 }
 
 @Composable

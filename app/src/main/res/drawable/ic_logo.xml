@@ -4,7 +4,7 @@
     android:height="96dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:fillColor="#34553F" android:pathData="M30,0 H78 A30,30 0 0 1 108,30 V78 A30,30 0 0 1 78,108 H30 A30,30 0 0 1 0,78 V30 A30,30 0 0 1 30,0 Z" />
+    <path android:fillColor="#1F3A2B" android:pathData="M30,0 H78 A30,30 0 0 1 108,30 V78 A30,30 0 0 1 78,108 H30 A30,30 0 0 1 0,78 V30 A30,30 0 0 1 30,0 Z" />
     <group android:scaleX="0.8" android:scaleY="0.8" android:translateX="6.00" android:translateY="17.20">
         <path android:strokeColor="#F3F1E6" android:strokeWidth="8" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M30,56 L46,72 L70,40" />
         <path android:fillColor="#F4A259" android:pathData="M70,40 C70,26 79,19 92,18 C92,32 83,40 70,40 Z" />
