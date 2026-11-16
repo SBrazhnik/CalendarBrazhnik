@@ -290,7 +290,10 @@ object BankImport {
         val lines = text.lines().filter { it.isNotBlank() }
         if (lines.isEmpty()) return emptyList()
         val sep = listOf(';', '\t', ',').maxBy { s -> lines.first().count { it == s } }
-        val headerIdx = lines.indexOfFirst { l -> val low = l.lowercase(); low.contains("дата") && low.contains("сумм") }
+        val headerIdx = lines.indexOfFirst { l ->
+            val low = l.lowercase()
+            low.contains("дата") && listOf("сумм", "приход", "расход", "списан", "зачисл").any { low.contains(it) }
+        }
         if (headerIdx < 0) return emptyList()
         val header = splitLine(lines[headerIdx], sep).map { it.lowercase() }
         fun col(vararg keys: String, avoid: List<String> = emptyList()) =
