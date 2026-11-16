@@ -29,7 +29,7 @@ class HealthTest {
     @Test fun normsByGoal() {
         val p = HealthProfile(Sex.MALE, 1990, 180, 80.0, Activity.MODERATE, WeightGoal.KEEP)
         val keep = HealthMath.norms(p, today)
-        assertEquals((1750 * 1.55).toInt(), keep.kcal, 1)
+        assertEquals(1750 * 1.55, keep.kcal.toDouble(), 1.0)
         assertEquals(128, keep.protein)
         assertEquals(2400, keep.waterMl)
         val lose = HealthMath.norms(p.copy(goal = WeightGoal.LOSE), today)
