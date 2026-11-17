@@ -661,10 +661,10 @@ fun DocsSummary(vm: MainViewModel) {
     val soonSubs = DocsMath.subscriptions(w).filter { it.active && ChronoUnit.DAYS.between(today, it.next) in 0..3 }
     val docs = w.documents.count { !it.archived }
     Card(onClick = { vm.tab = Tab.DOCS }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ModuleBadge(Tab.DOCS, 30.dp)
-                Spacer(Modifier.width(10.dp))
+                CardIcon(Tab.DOCS)
+                Spacer(Modifier.width(8.dp))
                 Text("Документы", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Text(
                     if (attention.isEmpty()) "всё в порядке" else "внимание: ${attention.size}",

@@ -921,10 +921,10 @@ fun HealthSummary(vm: MainViewModel) {
     val water = HealthOps.water(w, today)
     val h = vm.health
     Card(onClick = { vm.tab = Tab.HEALTH }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ModuleBadge(Tab.HEALTH, 30.dp)
-                Spacer(Modifier.width(10.dp))
+                CardIcon(Tab.HEALTH)
+                Spacer(Modifier.width(8.dp))
                 Text("Здоровье", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Text(
                     "${tot.kcal.roundToInt()}" + (norms?.let { " / ${it.kcal}" } ?: "") + " ккал",

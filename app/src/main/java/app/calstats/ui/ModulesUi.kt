@@ -33,6 +33,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -96,6 +97,10 @@ fun ModuleIcon(t: Tab, selected: Boolean = false, size: Dp = 24.dp, tint: Color?
         Tab.NOTES -> Icon(painterResource(R.drawable.ic_tab_notes), null, m, tint = c)
     }
 }
+
+/** Значок модуля в заголовке карточки: просто цветной символ, без подложки. */
+@Composable
+fun CardIcon(t: Tab, size: Dp = 20.dp) = ModuleIcon(t, true, size, moduleColor(t))
 
 /** Цветная квадратная плитка модуля. */
 @Composable
@@ -164,6 +169,12 @@ fun ModulesScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                                     if (pinned || pinnedCount < 4) "В нижней панели" else "В нижней панели (места нет)",
                                     style = MaterialTheme.typography.bodyMedium,
                                     modifier = Modifier.weight(1f),
+                                )
+                                val large = t in vm.largeCards
+                                FilterChip(
+                                    selected = large,
+                                    onClick = { vm.setCardLarge(t, !large) },
+                                    label = { Text(if (large) "Большая" else "Средняя") },
                                 )
                                 IconButton(onClick = { vm.moveModule(t, -1) }, enabled = idx > 0) {
                                     Icon(Icons.Filled.KeyboardArrowUp, "Выше")

@@ -211,6 +211,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun isEnabled(t: Tab) = t == Tab.HOME || t !in disabledModules
 
+    /** Модули, у которых на Главной большая карточка (остальные — средние плитки по две в ряд). */
+    var largeCards by mutableStateOf(loadTabs("cards_large", listOf(Tab.CALENDAR, Tab.TASKS, Tab.FINANCE)).toSet())
+        private set
+
+    fun setCardLarge(t: Tab, large: Boolean) {
+        largeCards = if (large) largeCards + t else largeCards - t
+        uiPrefs.edit().putString("cards_large", largeCards.joinToString(",") { it.name }).apply()
+    }
+
     private fun saveModules() {
         uiPrefs.edit()
             .putString("modules_order", moduleOrder.joinToString(",") { it.name })

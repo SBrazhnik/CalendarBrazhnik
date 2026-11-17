@@ -574,10 +574,10 @@ fun HabitsSummary(vm: MainViewModel) {
     val list = w.habits.filter { !it.archived && it.kind == HabitKind.DO && it.scheduled(today) }
     val done = list.count { HabitMath.done(it, HabitMath.values(w.habitLogs, it.id), today) }
     Card(onClick = { vm.tab = Tab.HABITS }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ModuleBadge(Tab.HABITS, 30.dp)
-                Spacer(Modifier.width(10.dp))
+                CardIcon(Tab.HABITS)
+                Spacer(Modifier.width(8.dp))
                 Text("Привычки", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 if (list.isNotEmpty()) Text("$done из ${list.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

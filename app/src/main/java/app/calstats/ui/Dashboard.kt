@@ -1,9 +1,12 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package app.calstats.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,23 +113,27 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { QuickActions(vm) { txSheet = it } }
-            item { QuickLaunch(vm) }
-            vm.enabledModules.forEach { t ->
-                item(key = t.name) {
-                    when (t) {
-                        Tab.CALENDAR -> CalendarSummary(vm)
-                        Tab.TASKS -> TasksSummary(vm)
-                        Tab.FINANCE -> FinanceSummary(vm)
-                        Tab.HABITS -> HabitsSummary(vm)
-                        Tab.HEALTH -> HealthSummary(vm)
-                        Tab.DOCS -> DocsSummary(vm)
-                        Tab.MONEY -> MoneySummary(vm)
-                        Tab.ANALYSIS -> AnalysisSummary(vm)
-                        Tab.WISHES -> WishesSummary(vm)
-                        Tab.NOTES -> NotesSummary(vm)
-                        Tab.HOME -> {}
+            // Большие карточки — во всю ширину, средние — по две в ряд (как в Samsung Health).
+            dashboardRows(vm.enabledModules, vm.largeCards).forEach { row ->
+                item(key = row.joinToString("+") { it.name }) {
+                    if (row.size == 1 && row[0] in vm.largeCards) {
+                        LargeCard(vm, row[0])
+                    } else {
+                        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            row.forEach { t -> MediumTile(vm, t, Modifier.weight(1f).fillMaxHeight()) }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
+            }
+            item {
+                Text(
+                    "Размер карточки: удерживайте её или настройте в «Модулях»",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
             }
             item {
                 Card(
@@ -151,52 +158,189 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     }
 }
 
-/** Плитки всех включённых модулей + «Настроить». */
-@Composable
-private fun QuickLaunch(vm: MainViewModel) {
-    FlowRow(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        maxItemsInEachRow = 4,
-    ) {
-        vm.enabledModules.forEach { t ->
-            Tile(Modifier.weight(1f), t.title, { ModuleBadge(t, 44.dp) }) { vm.tab = t }
+/** Раскладка Главной: большие карточки по одной, средние — парами (одинокая средняя подтягивает следующую). */
+fun dashboardRows(order: List<Tab>, large: Set<Tab>): List<List<Tab>> {
+    val rows = ArrayList<List<Tab>>()
+    val used = HashSet<Tab>()
+    order.forEachIndexed { i, t ->
+        if (t in used) return@forEachIndexed
+        used += t
+        if (t in large) {
+            rows += listOf(t)
+        } else {
+            val pair = order.drop(i + 1).firstOrNull { it !in used && it !in large }
+            if (pair != null) used += pair
+            rows += listOfNotNull(t, pair)
         }
-        Tile(Modifier.weight(1f), "Модули", {
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) { Icon(painterResource(R.drawable.ic_apps), null) }
-        }) { vm.push(Screen.Modules) }
     }
+    return rows
+}
+
+/** Плоская карточка: без тени и рамки, нажатие — открыть, удержание — сменить размер. */
+@Composable
+private fun FlatCard(vm: MainViewModel, t: Tab, modifier: Modifier = Modifier, onClick: () -> Unit, content: @Composable () -> Unit) {
+    Card(
+        modifier = modifier.clip(MaterialTheme.shapes.medium).combinedClickable(
+            onClick = onClick,
+            onLongClick = {
+                val large = t !in vm.largeCards
+                vm.setCardLarge(t, large)
+                vm.message = "«${t.title}»: " + if (large) "большая карточка" else "средняя карточка"
+            },
+        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) { content() }
 }
 
 @Composable
-private fun Tile(modifier: Modifier, label: String, icon: @Composable () -> Unit, onClick: () -> Unit) {
-    Column(
-        modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        icon()
-        Spacer(Modifier.height(6.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+private fun CardTitle(t: Tab, trailing: String? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CardIcon(t, 18.dp)
+        Spacer(Modifier.width(8.dp))
+        Text(t.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+        if (trailing != null) Text(trailing, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
 }
 
-/** Карточка модуля на главной. */
+/** Карточка модуля на главной (большая). */
 @Composable
 private fun SummaryCard(t: Tab, vm: MainViewModel, subtitle: String? = null, onClick: () -> Unit = { vm.tab = t }, content: @Composable () -> Unit) {
-    Card(onClick = onClick, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                ModuleBadge(t, 30.dp)
-                Spacer(Modifier.width(10.dp))
-                Text(t.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Spacer(Modifier.height(10.dp))
+    FlatCard(vm, t, Modifier.fillMaxWidth(), onClick) {
+        Column(Modifier.fillMaxWidth().padding(20.dp)) {
+            CardTitle(t, subtitle)
+            Spacer(Modifier.height(12.dp))
             content()
+        }
+    }
+}
+
+@Composable
+private fun LargeCard(vm: MainViewModel, t: Tab) {
+    when (t) {
+        Tab.CALENDAR -> CalendarSummary(vm)
+        Tab.TASKS -> TasksSummary(vm)
+        Tab.FINANCE -> FinanceSummary(vm)
+        Tab.HABITS -> HabitsSummary(vm)
+        Tab.HEALTH -> HealthSummary(vm)
+        Tab.DOCS -> DocsSummary(vm)
+        Tab.MONEY -> MoneySummary(vm)
+        Tab.ANALYSIS -> AnalysisSummary(vm)
+        Tab.WISHES -> WishesSummary(vm)
+        Tab.NOTES -> NotesSummary(vm)
+        Tab.HOME -> {}
+    }
+}
+
+/** Что показывает средняя плитка: крупное число, подпись, строка ниже и (необязательно) прогресс. */
+private data class TileInfo(val value: String, val unit: String, val caption: String, val progress: Float? = null, val alert: Boolean = false)
+
+@Composable
+private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
+    val w = vm.work
+    val today = vm.today
+    return when (t) {
+        Tab.CALENDAR -> {
+            val byDay = remember(vm.instances, vm.calendars) { vm.eventsByDay() }
+            val now = System.currentTimeMillis()
+            val left = byDay[today].orEmpty().filter { it.allDay || it.end > now }.sortedWith(compareBy({ !it.allDay }, { it.begin }))
+            val next = left.firstOrNull { !it.allDay } ?: left.firstOrNull()
+            TileInfo(
+                "${left.size}", Fmt.plural(left.size.toLong(), "событие", "события", "событий"),
+                next?.let { (if (it.allDay) "" else Fmt.time(Instant.ofEpochMilli(it.begin).atZone(vm.zone).toLocalTime()) + " ") + it.title } ?: "сегодня свободно",
+            )
+        }
+        Tab.TASKS -> {
+            val mine = w.issues.filter { it.assigneeId == ME && it.status != Status.DONE }
+            val overdue = mine.count { it.dueDate?.isBefore(today) == true }
+            TileInfo("${mine.size}", "открыто", if (overdue > 0) "просрочено: $overdue" else "без просрочек", alert = overdue > 0)
+        }
+        Tab.FINANCE -> {
+            val spent = w.transactions.filter { it.type == app.calstats.work.TxType.EXPENSE && it.localDate == today }.sumOf { it.amount }
+            val month = app.calstats.work.FinanceMath.expense(app.calstats.work.FinanceMath.inMonth(w.transactions, java.time.YearMonth.from(today)))
+            TileInfo(SplitMath.money(spent), "сегодня", "за месяц ${SplitMath.money(month)}")
+        }
+        Tab.HABITS -> {
+            val list = w.habits.filter { !it.archived && it.kind == app.calstats.work.HabitKind.DO && it.scheduled(today) }
+            val done = list.count { app.calstats.work.HabitMath.done(it, app.calstats.work.HabitMath.values(w.habitLogs, it.id), today) }
+            val sum = remember(vm.drinks, today) { Sobriety.summary(vm.drinks, today) }
+            TileInfo(
+                "$done/${list.size}", "сегодня",
+                if (vm.alcoholHabitShown && (sum.streak ?: 0) > 0) "🌱 " + Sobriety.streakText(sum) else if (list.isEmpty()) "добавьте привычку" else "выполнено",
+                if (list.isEmpty()) null else done.toFloat() / list.size,
+            )
+        }
+        Tab.HEALTH -> {
+            val norms = w.healthProfile?.let { app.calstats.work.HealthMath.norms(it, today) }
+            val kcal = w.foodLog.filter { it.date == today.toString() }.sumOf { it.kcal }.toInt()
+            val steps = vm.health?.todaySteps?.takeIf { vm.healthGranted > 0 }
+            TileInfo(
+                "$kcal", "ккал" + (norms?.let { " из ${it.kcal}" } ?: ""),
+                listOfNotNull("💧 ${app.calstats.work.HealthOps.water(w, today)} мл", steps?.let { "🚶 $it" }).joinToString(" · "),
+                norms?.let { kcal.toFloat() / it.kcal },
+            )
+        }
+        Tab.DOCS -> {
+            val att = app.calstats.work.DocsMath.attention(w.documents, today)
+            val subs = app.calstats.work.DocsMath.subscriptions(w).filter { it.active && it.type == app.calstats.work.TxType.EXPENSE }
+            if (att.isNotEmpty()) TileInfo("${att.size}", "внимание", att.first().let { "${it.kind.emoji} ${it.name}" }, alert = true)
+            else TileInfo("${w.documents.count { !it.archived }}", "документов", if (subs.isEmpty()) "всё в порядке" else "подписки ${SplitMath.money(subs.sumOf { it.monthly })}/мес")
+        }
+        Tab.MONEY -> {
+            val net = remember(w.expenses, w.books) { w.books.sumOf { b -> SplitMath.balances(w.expenses.filter { it.bookId == b.id })[ME] ?: 0L } }
+            TileInfo(SplitMath.money(kotlin.math.abs(net)), when { net > 0 -> "вам должны"; net < 0 -> "вы должны"; else -> "в расчёте" }, "${w.books.count { !it.archived }} счетов")
+        }
+        Tab.ANALYSIS -> {
+            val top = remember(vm.instances, vm.data, vm.calendars, vm.now) {
+                val p = Period(PeriodType.MONTH, vm.today, vm.period.customStart, vm.period.customEndInclusive)
+                Stats.groupStats(vm.groups(), vm.periodWindow(p), vm.now, vm.today).filter { it.agg.events > 0 }.maxByOrNull { it.agg.minutes }
+            }
+            TileInfo(top?.let { Fmt.hours(it.agg.minutes) } ?: "0", "ч", top?.group?.name?.let { "больше всего: $it" } ?: Fmt.monthName(today.monthValue))
+        }
+        Tab.WISHES -> {
+            val next = w.wishLists.filter { !it.archived }.mapNotNull { l -> nextOccurrence(l.localDate, today, l.yearly)?.let { l to it } }.minByOrNull { it.second }
+            TileInfo(
+                "${w.wishes.count { it.status == WishStatus.WANTED }}", "желаний",
+                next?.let { (l, d) -> "${l.emoji} " + if (d == today) "сегодня" else "через ${Fmt.days(ChronoUnit.DAYS.between(today, d))}" } ?: "поводов нет",
+            )
+        }
+        Tab.NOTES -> {
+            val last = w.notes.filter { !it.archived && !it.isEmpty }.maxByOrNull { it.updated }
+            TileInfo("${w.notes.count { !it.archived }}", "заметок", last?.let { it.title.ifBlank { it.asText().lineSequence().firstOrNull().orEmpty() } } ?: "пока пусто")
+        }
+        Tab.HOME -> TileInfo("", "", "")
+    }
+}
+
+/** Средняя плитка: заголовок, крупное число с подписью, строка и тонкий прогресс. */
+@Composable
+private fun MediumTile(vm: MainViewModel, t: Tab, modifier: Modifier) {
+    val info = tileInfo(vm, t)
+    FlatCard(vm, t, modifier, onClick = { vm.tab = t }) {
+        Column(Modifier.fillMaxWidth().padding(18.dp)) {
+            CardTitle(t)
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    info.value,
+                    style = MaterialTheme.typography.displaySmall,
+                    color = if (info.alert) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(info.unit, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, modifier = Modifier.padding(bottom = 5.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            info.progress?.let { f ->
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(moduleColor(t).copy(alpha = 0.16f))) {
+                    Box(Modifier.fillMaxWidth(f.coerceIn(0f, 1f)).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(moduleColor(t)))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(info.caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -448,12 +592,15 @@ private fun QuickActions(vm: MainViewModel, onTx: (app.calstats.work.Transaction
             Card(
                 onClick = a.run,
                 modifier = Modifier.weight(1f),
-                colors = CardDefaults.cardColors(containerColor = moduleColor(a.t).copy(alpha = 0.16f)),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
             ) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    ModuleIcon(a.t, true, 22.dp, moduleColor(a.t))
-                    Spacer(Modifier.height(4.dp))
-                    Text("+ " + a.label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    Box(Modifier.size(34.dp).clip(RoundedCornerShape(17.dp)).background(moduleColor(a.t).copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+                        ModuleIcon(a.t, true, 18.dp, moduleColor(a.t))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text("+ " + a.label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
                 }
             }
         }
