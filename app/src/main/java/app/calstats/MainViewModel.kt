@@ -34,6 +34,7 @@ import app.calstats.work.Project
 import app.calstats.work.Wish
 import app.calstats.work.newId
 import app.calstats.work.ME
+import app.calstats.work.WorkLog
 import app.calstats.work.Status
 import app.calstats.work.WorkOps
 import app.calstats.work.WorkStore
@@ -284,6 +285,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var quickEvent by mutableStateOf(false)
     /** Окно «Что нового» уже проверено в этом запуске. */
     var whatsNewChecked by mutableStateOf(false)
+
+    // ---------- Фокус (помидор) ----------
+    data class Focus(val issueId: String?, val title: String, val minutes: Int, val endAt: Long, val pausedLeft: Long? = null, val breakMode: Boolean = false)
+    var focus by mutableStateOf<Focus?>(null)
+
+    fun startFocus(issueId: String?, title: String, minutes: Int = 25) {
+        val f = Focus(issueId, title, minutes, System.currentTimeMillis() + minutes * 60_000L)
+        focus = f
+        Notify.focusAlarm(getApplication(), f.endAt, title)
+    }
+
+    fun pauseFocus() {
+        val f = focus ?: return
+        if (f.pausedLeft != null) {
+            val end = System.currentTimeMillis() + f.pausedLeft
+            focus = f.copy(endAt = end, pausedLeft = null)
+            Notify.focusAlarm(getApplication(), end, f.title)
+        } else {
+            focus = f.copy(pausedLeft = (f.endAt - System.currentTimeMillis()).coerceAtLeast(0))
+            Notify.focusAlarm(getApplication(), null, f.title)
+        }
+    }
+
+    /** Завершить: записать потраченное время в задачу (кроме перерыва). */
+    fun stopFocus(completed: Boolean) {
+        val f = focus ?: return
+        focus = null
+        Notify.focusAlarm(getApplication(), null, f.title)
+        if (f.breakMode) return
+        val left = f.pausedLeft ?: (f.endAt - System.currentTimeMillis()).coerceAtLeast(0)
+        val spent = if (completed) f.minutes else ((f.minutes * 60_000L - left) / 60_000).toInt()
+        if (spent > 0 && f.issueId != null) {
+            updateWork { WorkOps.addWorklog(it, f.issueId, WorkLog(app.calstats.work.newId(), ME, today.toString(), spent, "Фокус")) }
+            message = "Записано ${spent} мин в задачу"
+        }
+        if (completed) focus = Focus(null, "Перерыв", 5, System.currentTimeMillis() + 5 * 60_000L, breakMode = true)
+    }
+
+    fun postponeTasks() {
+        var n = 0
+        updateWork { val (w, c) = WorkOps.postpone(it, today); n = c; w }
+        message = if (n == 0) "Нечего переносить" else "Перенесено на завтра: $n"
+    }
 
     // ---------- Дни рождения из контактов ----------
     var birthdays by mutableStateOf<List<Birthday>>(emptyList())

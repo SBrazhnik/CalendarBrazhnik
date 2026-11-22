@@ -109,6 +109,8 @@ data class Issue(
     val created: Long = System.currentTimeMillis(),
     val updated: Long = System.currentTimeMillis(),
     val resolvedAt: Long? = null,
+    /** Повтор: DAILY, WEEKDAYS, WEEKLY, MONTHLY, YEARLY. При выполнении создаётся следующая задача. */
+    val repeat: String? = null,
 ) {
     val dueDate: LocalDate? get() = due?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     val startDate: LocalDate? get() = start?.let { runCatching { LocalDate.parse(it) }.getOrNull() }

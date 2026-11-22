@@ -94,7 +94,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
-private val TASK_VIEWS = listOf("ALL" to "Все задачи", "BOARD" to "Доска", "BACKLOG" to "Бэклог", "TIMELINE" to "Таймлайн", "TIME" to "Время")
+private val TASK_VIEWS = listOf("ALL" to "Все задачи", "BOARD" to "Доска", "BACKLOG" to "Бэклог", "TIMELINE" to "Таймлайн", "TIME" to "Время", "MATRIX" to "Матрица")
 
 /** Вкладка «Задачи» — таск-трекер в духе Jira. */
 @Composable
@@ -197,6 +197,7 @@ fun TasksTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 "BACKLOG" -> BacklogView(vm)
                 "TIMELINE" -> GanttView(vm)
                 "TIME" -> TimeView(vm)
+                "MATRIX" -> MatrixView(vm)
                 else -> BoardView(vm)
             }
         }
@@ -1118,6 +1119,65 @@ private fun AllIssueRow(vm: MainViewModel, i: Issue) {
             }
             Spacer(Modifier.width(8.dp))
             Avatar(w.person(i.assigneeId), 24.dp)
+        }
+    }
+}
+
+/** Матрица Эйзенхауэра: важно — высокий приоритет, срочно — срок в ближайшие 2 дня или просрочено. */
+@Composable
+private fun MatrixView(vm: MainViewModel) {
+    val today = vm.today
+    val open = vm.work.issues.filter { it.assigneeId == app.calstats.work.ME && it.status != Status.DONE }
+    fun important(i: Issue) = i.priority == app.calstats.work.Priority.HIGH || i.priority == app.calstats.work.Priority.HIGHEST
+    fun urgent(i: Issue) = i.dueDate?.let { !it.isAfter(today.plusDays(2)) } == true
+    val q = listOf(
+        Triple("Срочно и важно", "Сделать сейчас", open.filter { important(it) && urgent(it) }),
+        Triple("Важно, не срочно", "Запланировать", open.filter { important(it) && !urgent(it) }),
+        Triple("Срочно, не важно", "Поручить или быстро", open.filter { !important(it) && urgent(it) }),
+        Triple("Не срочно, не важно", "Отложить", open.filter { !important(it) && !urgent(it) }),
+    )
+    val colors = listOf(0xFFC0583F, 0xFF3F7C9A, 0xFFE0954F, 0xFF8A8F98)
+    val overdue = open.count { it.dueDate?.let { d -> !d.isAfter(today) } == true }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (overdue > 0) {
+            item {
+                OutlinedButton(onClick = { vm.postponeTasks() }, modifier = Modifier.fillMaxWidth()) { Text("Перенести невыполненное на завтра ($overdue)") }
+            }
+        }
+        q.chunked(2).forEachIndexed { r, pair ->
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    pair.forEachIndexed { c, (title, hint, list) ->
+                        val col = androidx.compose.ui.graphics.Color(colors[r * 2 + c])
+                        Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(title, style = MaterialTheme.typography.titleSmall, color = col)
+                                Text("$hint · ${list.size}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                list.take(8).forEach { i ->
+                                    Text(
+                                        "• " + i.title,
+                                        Modifier.fillMaxWidth().clickable { vm.push(Screen.IssueDetail(i.id)) }.padding(vertical = 3.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2,
+                                    )
+                                }
+                                if (list.size > 8) Text("и ещё ${list.size - 8}", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Text(
+                "Важность — приоритет «Высокий» и выше. Срочность — срок в ближайшие 2 дня. Меняйте их в карточке задачи.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

@@ -102,6 +102,9 @@ fun MyDayCard(vm: MainViewModel) {
                     if (i.dueDate?.isBefore(today) == true && !done) Text("просрочено", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 }
             }
+            if (tasks.any { it.status != Status.DONE }) {
+                TextButton(onClick = { vm.postponeTasks() }, modifier = Modifier.padding(start = 8.dp)) { Text("Перенести невыполненное на завтра") }
+            }
             habits.forEach { h ->
                 val v = HabitMath.values(w.habitLogs, h.id)[today] ?: 0
                 val done = v >= h.target

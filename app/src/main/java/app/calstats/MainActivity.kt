@@ -124,6 +124,7 @@ fun App(vm: MainViewModel) {
 
     vm.incoming?.let { IncomingDialog(vm, it) }
     if (vm.quickEvent) app.calstats.ui.QuickEventDialog(vm)
+    vm.focus?.let { app.calstats.ui.FocusDialog(vm, it) }
     if (!vm.whatsNewChecked && vm.stack.size == 1) app.calstats.ui.WhatsNewDialog(vm)
 
     when (val screen = vm.stack.last()) {

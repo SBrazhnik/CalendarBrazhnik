@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -318,6 +319,20 @@ fun IssueScreen(vm: MainViewModel, id: String, snackbar: SnackbarHostState) {
                             save { it.copy(due = d?.toString()) }
                         }
                     }
+                    FieldRow("Повтор") {
+                        var open by remember { mutableStateOf(false) }
+                        Box {
+                            TextButton(onClick = { open = true }, contentPadding = PaddingValues(0.dp)) { Text("🔁 " + app.calstats.work.TaskRepeat.title(issue.repeat)) }
+                            DropdownMenu(open, { open = false }) {
+                                app.calstats.work.TaskRepeat.options.forEach { (k, t) ->
+                                    DropdownMenuItem(text = { Text(t) }, onClick = {
+                                        open = false
+                                        save { it.copy(repeat = k, due = if (k != null && it.due == null) vm.today.toString() else it.due) }
+                                    })
+                                }
+                            }
+                        }
+                    }
                     FieldRow("Метки") {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             issue.labels.forEach { l ->
@@ -382,6 +397,7 @@ fun IssueScreen(vm: MainViewModel, id: String, snackbar: SnackbarHostState) {
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Учёт времени", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { vm.startFocus(issue.id, issue.title) }) { Text("▶ Фокус") }
                 TextButton(onClick = { estimateDialog = true }) {
                     Text(issue.estimateMin?.let { "Оценка: ${Durations.format(it)}" } ?: "Оценить")
                 }

@@ -38,6 +38,7 @@ object Notify {
     const val ACTION_EVENT = "app.calstats.N_EVENT"
     const val ACTION_RESCAN = "app.calstats.N_RESCAN"
     const val ACTION_WEEKLY = "app.calstats.N_WEEKLY"
+    const val ACTION_FOCUS = "app.calstats.N_FOCUS"
     private const val CH_DAY = "daily"
     private const val CH_EVENTS = "events"
 
@@ -94,6 +95,14 @@ object Notify {
         var z = now.toLocalDate().atTime(t).atZone(now.zone)
         if (!z.isAfter(now)) z = z.plusDays(1)
         return z.toInstant().toEpochMilli()
+    }
+
+    /** Будильник окончания фокуса (null — отменить). */
+    fun focusAlarm(ctx: Context, at: Long?, title: String) {
+        val am = ctx.getSystemService(AlarmManager::class.java) ?: return
+        val p = pi(ctx, ACTION_FOCUS, 504) { it.putExtra("title", title) }
+        am.cancel(p)
+        if (at != null) at(am, at, p)
     }
 
     /** Переставить все будильники (запуск приложения, перезагрузка, смена настроек). */
@@ -220,6 +229,7 @@ object Notify {
                 scheduleAll(ctx)
             }
             ACTION_RESCAN -> scheduleEvents(ctx)
+            ACTION_FOCUS -> post(ctx, CH_EVENTS, 4504, "⏰ Время вышло", listOf(intent.getStringExtra("title").orEmpty().ifBlank { "Фокус" } + " — откройте приложение, чтобы записать время"), Tab.TASKS)
             ACTION_WEEKLY -> {
                 val r = WeekReport.build(ctx, WorkStore(ctx).load(), today)
                 post(ctx, CH_DAY, 4503, "📊 Итог недели", r.lines(), Tab.HOME)

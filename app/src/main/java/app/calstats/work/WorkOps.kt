@@ -72,7 +72,33 @@ object WorkOps {
     fun setStatus(w: Workspace, id: String, s: Status): Workspace {
         val i = w.issue(id) ?: return w
         val maxOrder = w.issues.filter { it.projectId == i.projectId && it.status == s }.maxOfOrNull { it.order } ?: 0.0
-        return updateIssue(w, i.copy(status = s, order = if (i.status != s) maxOrder + 1 else i.order))
+        var out = updateIssue(w, i.copy(status = s, order = if (i.status != s) maxOrder + 1 else i.order))
+        // Повторяющаяся задача: при выполнении появляется следующая.
+        if (s == Status.DONE && i.status != Status.DONE && i.repeat != null) {
+            val base = i.dueDate ?: LocalDate.now()
+            val next = TaskRepeat.next(base, i.repeat)
+            val shift = java.time.temporal.ChronoUnit.DAYS.between(base, next)
+            out = createIssue(
+                out,
+                i.copy(
+                    id = newId(), status = Status.TODO, due = next.toString(), start = i.startDate?.plusDays(shift)?.toString(),
+                    worklogs = emptyList(), comments = emptyList(), resolvedAt = null, sprintId = null,
+                ),
+            ).first
+        }
+        return out
+    }
+
+    /** Перенести мои невыполненные задачи со сроком «сегодня и раньше» на завтра. */
+    fun postpone(w: Workspace, today: LocalDate): Pair<Workspace, Int> {
+        var n = 0
+        val issues = w.issues.map {
+            if (it.assigneeId == ME && it.status != Status.DONE && it.dueDate?.let { d -> !d.isAfter(today) } == true) {
+                n++
+                it.copy(due = today.plusDays(1).toString(), updated = System.currentTimeMillis())
+            } else it
+        }
+        return w.copy(issues = issues) to n
     }
 
     fun deleteIssue(w: Workspace, id: String): Workspace {
@@ -182,5 +208,24 @@ object WorkOps {
         val existing = w.notes.map { Triple(it.title.trim(), it.asText().trim(), it.created / 1000) }.toHashSet()
         val fresh = list.filter { Triple(it.title.trim(), it.asText().trim(), it.created / 1000) !in existing }
         return w.copy(notes = w.notes + fresh) to fresh.size
+    }
+}
+
+object TaskRepeat {
+    val options = listOf(null to "Не повторять", "DAILY" to "Каждый день", "WEEKDAYS" to "По будням", "WEEKLY" to "Каждую неделю", "MONTHLY" to "Каждый месяц", "YEARLY" to "Каждый год")
+
+    fun title(r: String?) = options.firstOrNull { it.first == r }?.second ?: "Не повторять"
+
+    fun next(d: java.time.LocalDate, r: String): java.time.LocalDate = when (r) {
+        "DAILY" -> d.plusDays(1)
+        "WEEKDAYS" -> {
+            var x = d.plusDays(1)
+            while (x.dayOfWeek.value >= 6) x = x.plusDays(1)
+            x
+        }
+        "WEEKLY" -> d.plusWeeks(1)
+        "MONTHLY" -> d.plusMonths(1)
+        "YEARLY" -> d.plusYears(1)
+        else -> d.plusDays(1)
     }
 }
