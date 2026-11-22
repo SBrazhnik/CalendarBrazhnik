@@ -141,6 +141,7 @@ fun LazyListScope.debtsSection(vm: MainViewModel, onDebt: (Debt) -> Unit, onPart
                     Button(onClick = { onDebt(Debt(newId(), "", DebtDir.OWED_TO_ME, date = today.toString())) }) { Text("+ Мне должны") }
                     OutlinedButton(onClick = { onDebt(Debt(newId(), "", DebtDir.I_OWE, date = today.toString())) }) { Text("+ Я должен") }
                 }
+                TextButton(onClick = { vm.loanCalc = true }) { Text("🏦 Кредитный калькулятор и график платежей") }
             }
         }
     }

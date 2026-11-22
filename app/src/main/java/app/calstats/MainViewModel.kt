@@ -27,6 +27,7 @@ import app.calstats.widget.CalendarWidget
 import app.calstats.widget.TasksWidget
 import app.calstats.health.HealthLink
 import app.calstats.work.HealthSnapshot
+import app.calstats.work.BankImport
 import app.calstats.work.Issue
 import app.calstats.work.NoteImport
 import app.calstats.work.PALETTE
@@ -283,8 +284,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var editHome by mutableStateOf(false)
     /** Окно «Событие текстом». */
     var quickEvent by mutableStateOf(false)
+    var loanCalc by mutableStateOf(false)
     /** Окно «Что нового» уже проверено в этом запуске. */
     var whatsNewChecked by mutableStateOf(false)
+
+    // ---------- Финансы: уведомления банков, день зарплаты ----------
+    var bankPending by mutableStateOf(BankQueue.list(app))
+        private set
+    var bankHintHidden by mutableStateOf(uiPrefs.getBoolean("bank_hint_hidden", false))
+        private set
+    fun hideBankHint() { bankHintHidden = true; uiPrefs.edit().putBoolean("bank_hint_hidden", true).apply() }
+    fun refreshBank() { bankPending = BankQueue.list(getApplication()) }
+    fun dropBank(ids: Set<String>) { BankQueue.remove(getApplication(), ids); refreshBank() }
+    fun acceptBank(ids: Set<String>) {
+        val list = bankPending.filter { it.id in ids }
+        updateWork { w0 ->
+            var w = app.calstats.work.FinanceOps.ensureDefaults(w0)
+            val acc = w.accounts.firstOrNull { !it.archived } ?: return@updateWork w0
+            val rows = list.map { BankImport.Row(java.time.LocalDate.parse(it.date), if (it.income) it.amount else -it.amount, it.merchant.ifBlank { it.bank }, "") }
+            val txs = BankImport.toTransactions(rows, acc.id, w.finCategories, "Уведомление банка")
+            w.copy(transactions = w.transactions + txs)
+        }
+        if (work.accounts.none { !it.archived }) message = "Сначала добавьте счёт в «Финансах»"
+        else { dropBank(ids); message = "Добавлено операций: ${list.size}" }
+    }
+    var payday by mutableStateOf(uiPrefs.getInt("payday", 0).takeIf { it > 0 })
+        private set
+    fun changePayday(d: Int?) { payday = d; uiPrefs.edit().putInt("payday", d ?: 0).apply() }
 
     // ---------- Фокус (помидор) ----------
     data class Focus(val issueId: String?, val title: String, val minutes: Int, val endAt: Long, val pausedLeft: Long? = null, val breakMode: Boolean = false)
@@ -586,6 +612,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onResume() {
         viewModelScope.launch(Dispatchers.IO) { runCatching { Notify.scheduleEvents(getApplication()) } }
         loadBirthdays()
+        refreshBank()
         Usage.open(getApplication())
         refreshHealth()
         checkUpdate()

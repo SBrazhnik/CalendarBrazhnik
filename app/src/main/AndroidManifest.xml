@@ -124,6 +124,17 @@
             android:name=".DrinkReminderReceiver"
             android:exported="false" />
 
+        <!-- Операции из уведомлений банков (включается пользователем в «Финансах») -->
+        <service
+            android:name=".BankListener"
+            android:exported="true"
+            android:label="Зелёный ритм: операции из уведомлений банков"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".NotifyReceiver"
             android:exported="false" />
