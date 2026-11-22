@@ -292,6 +292,13 @@ private fun DayList(vm: MainViewModel, date: LocalDate, events: List<EventInstan
                 )
             }
         }
+        vm.birthdaysOn(date).forEach { b ->
+            item(key = "bd$b") {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                    Text("🎂  $b", Modifier.padding(14.dp), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
         items(sorted, key = { "e${it.eventId}_${it.begin}" }) { e -> DayEventCard(vm, e, date) }
         if (issues.isNotEmpty()) {
             item { Text("Задачи на этот день", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp)) }

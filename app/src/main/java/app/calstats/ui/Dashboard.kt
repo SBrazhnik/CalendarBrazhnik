@@ -142,7 +142,9 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     )
                 }
             }
+            if (!vm.editHome) item { MyDayCard(vm) }
             if (!vm.editHome) item { QuickActions(vm) { txSheet = it } }
+            if (!vm.editHome && (vm.today.dayOfWeek.value >= 6 || vm.today.dayOfWeek.value == 1)) item { WeekSummaryCard(vm) }
             if (vm.editHome) {
                 item {
                     Text(
@@ -736,7 +738,7 @@ private fun QuickActions(vm: MainViewModel, onTx: (app.calstats.work.Transaction
                 onTx(app.calstats.work.Transaction(app.calstats.work.newId(), app.calstats.work.TxType.EXPENSE, 0, acc.id, date = vm.today.toString()))
             }
         })
-        if (vm.isEnabled(Tab.CALENDAR)) add(A(Tab.CALENDAR, "Событие") { vm.push(Screen.Edit(presetDate = vm.today)) })
+        if (vm.isEnabled(Tab.CALENDAR)) add(A(Tab.CALENDAR, "Событие") { vm.quickEvent = true })
         if (vm.isEnabled(Tab.TASKS)) add(A(Tab.TASKS, "Задача") {
             vm.selectTaskView("ALL")
             vm.tab = Tab.TASKS

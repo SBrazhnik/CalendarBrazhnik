@@ -2,4 +2,5 @@
 <resources>
     <string name="widget_description">Месяц с событиями и отметками</string>
     <string name="tasks_widget_description">Ваши открытые задачи с отметкой выполнения</string>
+    <string name="today_widget_description">Привычки и вода на сегодня — отметить с рабочего стола</string>
 </resources>

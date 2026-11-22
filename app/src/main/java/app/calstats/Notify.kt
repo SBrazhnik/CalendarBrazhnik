@@ -37,6 +37,7 @@ object Notify {
     const val ACTION_EVENING = "app.calstats.N_EVENING"
     const val ACTION_EVENT = "app.calstats.N_EVENT"
     const val ACTION_RESCAN = "app.calstats.N_RESCAN"
+    const val ACTION_WEEKLY = "app.calstats.N_WEEKLY"
     private const val CH_DAY = "daily"
     private const val CH_EVENTS = "events"
 
@@ -60,6 +61,9 @@ object Notify {
         var before: Int
             get() = p.getInt("before", 15)
             set(v) = p.edit().putInt("before", v).apply()
+        var weekly: Boolean
+            get() = p.getBoolean("weekly", true)
+            set(v) = p.edit().putBoolean("weekly", v).apply()
     }
 
     private fun channels(ctx: Context) {
@@ -102,6 +106,14 @@ object Notify {
         am.cancel(e)
         if (s.morning) at(am, nextAt(s.morningTime), m)
         if (s.evening) at(am, nextAt(s.eveningTime), e)
+        val wk = pi(ctx, ACTION_WEEKLY, 503)
+        am.cancel(wk)
+        if (s.weekly) {
+            val now = ZonedDateTime.now()
+            var z = now.toLocalDate().plusDays((7L - now.dayOfWeek.value) % 7).atTime(19, 0).atZone(now.zone)
+            if (!z.isAfter(now)) z = z.plusWeeks(1)
+            at(am, z.toInstant().toEpochMilli(), wk)
+        }
         // Раз в 3 часа пересматриваем события — чтобы поймать добавленные в Google Календаре.
         am.setInexactRepeating(AlarmManager.RTC, System.currentTimeMillis() + 3 * 3600_000L, 3 * 3600_000L, pi(ctx, ACTION_RESCAN, 502))
         scheduleEvents(ctx)
@@ -158,6 +170,7 @@ object Notify {
     fun morningLines(ctx: Context, today: LocalDate): List<String> {
         val out = ArrayList<String>()
         val zone = ZoneId.systemDefault()
+        Birthdays.load(ctx).filter { it.day == java.time.MonthDay.from(today) }.forEach { out += "🎂 День рождения: " + Birthdays.text(it, today) }
         if (hasCalendar(ctx)) {
             val from = today.atStartOfDay(zone).toInstant().toEpochMilli()
             val to = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
@@ -207,6 +220,11 @@ object Notify {
                 scheduleAll(ctx)
             }
             ACTION_RESCAN -> scheduleEvents(ctx)
+            ACTION_WEEKLY -> {
+                val r = WeekReport.build(ctx, WorkStore(ctx).load(), today)
+                post(ctx, CH_DAY, 4503, "📊 Итог недели", r.lines(), Tab.HOME)
+                scheduleAll(ctx)
+            }
             ACTION_EVENT -> {
                 val id = intent.getLongExtra("id", 0)
                 val begin = intent.getLongExtra("begin", 0)

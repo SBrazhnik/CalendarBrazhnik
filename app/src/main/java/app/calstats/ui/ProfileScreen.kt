@@ -153,8 +153,48 @@ private fun SwitchRow(title: String, sub: String? = null, on: Boolean, onChange:
 fun ProfileScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     val ctx = LocalContext.current
     var name by remember { mutableStateOf(vm.work.meName.takeIf { it != "Я" } ?: "") }
+    var editBmp by remember { mutableStateOf<Bitmap?>(null) }
+    var avatarMenu by remember { mutableStateOf(false) }
+    var emojiSheet by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null && saveAvatar(ctx, uri)) vm.avatarVersion++
+        if (uri != null) editBmp = AvatarFiles.importPhoto(ctx, uri) ?: run { vm.message = "Не удалось открыть фото"; null }
+    }
+    val pick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+    editBmp?.let { b ->
+        AvatarEditorDialog(b, onDismiss = { editBmp = null }) { out ->
+            AvatarFiles.save(ctx, out)
+            vm.avatarVersion++
+            editBmp = null
+        }
+    }
+    if (emojiSheet) EmojiAvatarSheet(onDismiss = { emojiSheet = false }) { out ->
+        AvatarFiles.save(ctx, out)
+        AvatarFiles.src(ctx).delete()
+        vm.avatarVersion++
+        emojiSheet = false
+    }
+    if (avatarMenu) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { avatarMenu = false },
+            title = { Text("Фото профиля") },
+            text = {
+                Column {
+                    listOfNotNull(
+                        "📷  Выбрать фото" to { pick() },
+                        "😊  Аватар из эмодзи" to { emojiSheet = true },
+                        if (AvatarFiles.src(ctx).exists()) "✂  Изменить текущее" to { editBmp = AvatarFiles.loadSrc(ctx) } else null,
+                        if (AvatarFiles.out(ctx).exists()) "🗑  Удалить" to { AvatarFiles.delete(ctx); vm.avatarVersion++ } else null,
+                    ).forEach { (label, action) ->
+                        Text(
+                            label,
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { avatarMenu = false; action() }.padding(vertical = 12.dp, horizontal = 4.dp),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { avatarMenu = false }) { Text("Закрыть") } },
+        )
     }
     LaunchedEffect(Unit) { vm.checkUpdate(manual = false) }
 
@@ -179,10 +219,10 @@ fun ProfileScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
         ) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.clip(CircleShape).clickable { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                    Box(Modifier.clip(CircleShape).clickable { avatarMenu = true }) {
                         Avatar(vm, 88.dp)
                     }
-                    TextButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("Сменить фото") }
+                    TextButton(onClick = { avatarMenu = true }) { Text("Изменить фото") }
                     OutlinedTextField(
                         name, { name = it },
                         label = { Text("Как вас зовут") },
@@ -366,6 +406,7 @@ private data class Conn(val emoji: String, val title: String, val status: String
 fun AccountsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     val ctx = LocalContext.current
     val hcLauncher = rememberLauncherForActivityResult(HealthLink.permissionContract()) { vm.refreshHealth(true) }
+    val contactsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.loadBirthdays() }
     LaunchedEffect(Unit) { vm.refreshHealth(true); vm.refreshTelegram() }
     var telegramOpen by remember { mutableStateOf(false) }
 
@@ -399,6 +440,12 @@ fun AccountsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             if (yandex.isEmpty()) "DAVx⁵" else "Аккаунты",
         ) { if (yandex.isEmpty()) openUrl(ctx, "https://www.davx5.com/") else syncSettings() },
         Conn("✈", "Telegram", vm.telegramState.let { if (it.connected) "Бот @${it.botName}" else "Напоминания и быстрые записи" }, vm.telegramState.connected.takeIf { it }, if (vm.telegramState.connected) "Настроить" else "Подключить") { telegramOpen = !telegramOpen },
+        Conn(
+            "🎂", "Контакты",
+            if (app.calstats.Birthdays.allowed(ctx)) "Дни рождения: ${vm.birthdays.size}" else "Дни рождения из контактов — в календаре и утренней сводке",
+            app.calstats.Birthdays.allowed(ctx).takeIf { it },
+            if (app.calstats.Birthdays.allowed(ctx)) null else "Подключить",
+        ) { contactsLauncher.launch(android.Manifest.permission.READ_CONTACTS) },
         Conn("₽", "Банк", "Т-Банк, Сбер, Альфа — импорт выписки CSV в Финансы", null, "Финансы") { vm.tab = Tab.FINANCE },
         Conn("📝", "Google Keep, Samsung Notes", "Импорт архива Keep и «Поделиться» из любых заметок", null, "Заметки") { vm.tab = Tab.NOTES },
         Conn("🥫", "Open Food Facts", "Поиск продуктов и штрихкодов — без регистрации", true, null, null),

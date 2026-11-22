@@ -280,8 +280,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     var editHome by mutableStateOf(false)
+    /** Окно «Событие текстом». */
+    var quickEvent by mutableStateOf(false)
     /** Окно «Что нового» уже проверено в этом запуске. */
     var whatsNewChecked by mutableStateOf(false)
+
+    // ---------- Дни рождения из контактов ----------
+    var birthdays by mutableStateOf<List<Birthday>>(emptyList())
+        private set
+    fun loadBirthdays() {
+        viewModelScope.launch { birthdays = withContext(Dispatchers.IO) { Birthdays.load(getApplication()) } }
+    }
+    fun birthdaysOn(d: LocalDate): List<String> =
+        birthdays.filter { it.day == java.time.MonthDay.from(d) }.map { Birthdays.text(it, d) }
 
     // ---------- Профиль и обновления ----------
     var avatarVersion by mutableStateOf(0)
@@ -530,6 +541,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onResume() {
         viewModelScope.launch(Dispatchers.IO) { runCatching { Notify.scheduleEvents(getApplication()) } }
+        loadBirthdays()
         Usage.open(getApplication())
         refreshHealth()
         checkUpdate()
@@ -744,6 +756,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { workStore.save(w) }
             TasksWidget.refresh(getApplication())
+            app.calstats.widget.TodayWidget.refresh(getApplication())
         }
     }
 

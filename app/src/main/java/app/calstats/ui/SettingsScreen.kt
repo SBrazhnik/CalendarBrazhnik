@@ -168,6 +168,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 var evening by remember { mutableStateOf(ns.evening) }
                 var eTime by remember { mutableStateOf(ns.eveningTime) }
                 var events by remember { mutableStateOf(ns.events) }
+                var weekly by remember { mutableStateOf(ns.weekly) }
                 var before by remember { mutableStateOf(ns.before) }
                 fun apply() { app.calstats.Notify.scheduleAll(ctx) }
                 @Composable
@@ -200,6 +201,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 if (evening) OutlinedButton(onClick = {
                     TimePickerDialog(ctx, { _, h, m -> eTime = LocalTime.of(h, m); ns.eveningTime = eTime; apply() }, eTime.hour, eTime.minute, true).show()
                 }, modifier = Modifier.fillMaxWidth()) { Text("Вечером в " + Fmt.time(eTime)) }
+                Toggle("Итог недели", "В воскресенье в 19:00: события, задачи, траты, привычки", weekly) { weekly = it; ns.weekly = it }
                 TextButton(onClick = { app.calstats.Notify.handle(ctx, android.content.Intent(app.calstats.Notify.ACTION_MORNING)) }) { Text("Показать утреннюю сводку сейчас") }
                 Text(
                     "Если события дублируются с календарём Samsung или Google, выключите напоминания там или здесь.",
