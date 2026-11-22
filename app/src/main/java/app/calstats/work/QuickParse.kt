@@ -33,7 +33,7 @@ object QuickParse {
         fun cut(r: Regex, f: (MatchResult) -> Unit): Boolean {
             val m = r.find(s) ?: return false
             f(m)
-            s = s.removeRange(m.range).let { " " + it.trim() + " " }
+            s = s.replaceRange(m.range, " ").let { " " + it.trim() + " " }
             return true
         }
 
