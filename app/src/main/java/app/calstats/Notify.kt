@@ -228,6 +228,16 @@ object Notify {
         open.count { it.dueDate?.isBefore(today) == true }.takeIf { it > 0 }?.let { out += "⚠ Просроченных задач: $it" }
         w.recurrings.filter { it.active && it.next == today }.forEach { out += "🔁 Платёж: ${it.name} — ${SplitMath.money(it.amount)}" }
         out += DebtMath.reminders(w, today)
+        app.calstats.work.Pets.upcoming(w.petEvents, today, 1).forEach { e ->
+            out += "${e.type.emoji} ${w.pets.firstOrNull { it.id == e.petId }?.name.orEmpty()}: ${e.type.title.lowercase()}"
+        }
+        w.cars.forEach { c ->
+            app.calstats.work.CarMath.nextService(c, w.carEvents, today)?.let { n ->
+                if ((n.daysLeft ?: 99) in 0..7 || (n.kmLeft ?: 9999) in 0..500) out += "🔧 ${c.name}: пора на ТО"
+            }
+        }
+        if (today.dayOfMonth in 20..25 && w.meters.isNotEmpty() &&
+            w.meters.any { m -> w.meterReadings.none { it.meterId == m.id && it.date.startsWith(today.toString().take(7)) } }) out += "💧 Передайте показания счётчиков"
         out += DocsReminder.lines(ctx, today)
         val habits = w.habits.filter { !it.archived && it.kind == HabitKind.DO && it.scheduled(today) }
         if (habits.isNotEmpty()) out += "✅ Привычки на сегодня: ${habits.size}"

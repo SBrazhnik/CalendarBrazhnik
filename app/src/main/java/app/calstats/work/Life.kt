@@ -1,0 +1,189 @@
+package app.calstats.work
+
+import kotlinx.serialization.Serializable
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
+
+/* Модули «Покупки», «Цели», «Дневник», «Авто», «Дом», «Питомцы». */
+
+// ---------- Покупки ----------
+@Serializable
+data class ShopList(val id: String, val name: String, val emoji: String = "🛒", val archived: Boolean = false)
+
+@Serializable
+data class ShopItem(
+    val id: String,
+    val listId: String,
+    val name: String,
+    val qty: String = "",
+    val done: Boolean = false,
+    val created: Long = System.currentTimeMillis(),
+)
+
+object Shop {
+    /** «молоко 2, хлеб, яйца 10 шт» → отдельные позиции. */
+    fun parse(text: String): List<Pair<String, String>> = text.split(',', '\n', ';')
+        .map { it.trim() }.filter { it.isNotEmpty() }
+        .map { s ->
+            val m = Regex("""^(.*?)\s+(\d+(?:[.,]\d+)?\s*(?:шт|кг|г|л|мл|уп|пач)?\.?)$""").find(s)
+            if (m != null) m.groupValues[1].trim().replaceFirstChar { it.uppercase() } to m.groupValues[2].trim()
+            else s.replaceFirstChar { it.uppercase() } to ""
+        }
+
+    fun shareText(l: ShopList, items: List<ShopItem>) =
+        "${l.emoji} ${l.name}\n" + items.filter { !it.done }.joinToString("\n") { "• ${it.name}" + if (it.qty.isNotBlank()) " — ${it.qty}" else "" }
+}
+
+// ---------- Цели ----------
+@Serializable
+data class GoalStep(val id: String, val title: String, val done: Boolean = false)
+
+@Serializable
+data class LifeGoal(
+    val id: String,
+    val title: String,
+    val area: String = "Личное",
+    val emoji: String = "🎯",
+    val year: Int = LocalDate.now().year,
+    val deadline: String? = null,
+    val steps: List<GoalStep> = emptyList(),
+    val why: String = "",
+    val done: Boolean = false,
+) {
+    val progress: Float get() = when {
+        done -> 1f
+        steps.isEmpty() -> 0f
+        else -> steps.count { it.done }.toFloat() / steps.size
+    }
+}
+
+val GOAL_AREAS = listOf("Здоровье" to "💪", "Финансы" to "💰", "Карьера" to "💼", "Семья" to "👨‍👩‍👧", "Учёба" to "📚", "Путешествия" to "✈", "Дом" to "🏠", "Личное" to "🌱")
+
+// ---------- Дневник ----------
+@Serializable
+data class JournalEntry(
+    val date: String,
+    val text: String = "",
+    val gratitude: List<String> = emptyList(),
+    val best: String = "",
+    val updated: Long = System.currentTimeMillis(),
+)
+
+object Journal {
+    val PROMPTS = listOf(
+        "Что сегодня получилось лучше всего?", "Чему я сегодня научился?", "Что бы я сделал иначе?",
+        "Кто сегодня меня порадовал?", "Что меня беспокоит и что я могу с этим сделать?",
+        "Какой маленький шаг к цели я сделал?", "За что я могу себя похвалить?",
+    )
+
+    fun prompt(d: LocalDate) = PROMPTS[(d.dayOfYear) % PROMPTS.size]
+
+    fun streak(entries: List<JournalEntry>, today: LocalDate): Int {
+        val days = entries.filter { it.text.isNotBlank() || it.gratitude.any { g -> g.isNotBlank() } }.map { it.date }.toSet()
+        var d = if (today.toString() in days) today else today.minusDays(1)
+        var n = 0
+        while (d.toString() in days) { n++; d = d.minusDays(1) }
+        return n
+    }
+}
+
+// ---------- Авто ----------
+@Serializable
+data class Car(val id: String, val name: String, val plate: String = "", val year: Int? = null, val serviceKm: Int = 10_000, val serviceMonths: Int = 12)
+
+enum class CarEventType(val title: String, val emoji: String) {
+    FUEL("Заправка", "⛽"), SERVICE("ТО", "🔧"), REPAIR("Ремонт", "🛠"), TIRES("Шины", "🛞"), WASH("Мойка", "🧽"),
+    INSURANCE("Страховка", "🛡"), FINE("Штраф", "🚓"), PARKING("Парковка", "🅿"), OTHER("Другое", "🚗"),
+}
+
+@Serializable
+data class CarEvent(
+    val id: String,
+    val carId: String,
+    val type: CarEventType,
+    val date: String,
+    val km: Int? = null,
+    val cost: Long = 0,
+    val liters: Double? = null,
+    val note: String = "",
+)
+
+object CarMath {
+    fun lastKm(events: List<CarEvent>, carId: String) = events.filter { it.carId == carId }.mapNotNull { it.km }.maxOrNull()
+
+    /** Средний расход л/100 км по заправкам «до полного бака» (по всем заправкам с пробегом). */
+    fun consumption(events: List<CarEvent>, carId: String): Double? {
+        val f = events.filter { it.carId == carId && it.type == CarEventType.FUEL && it.km != null && it.liters != null }.sortedBy { it.km }
+        if (f.size < 2) return null
+        val km = f.last().km!! - f.first().km!!
+        val l = f.drop(1).sumOf { it.liters!! }
+        return if (km > 0) l / km * 100 else null
+    }
+
+    data class NextService(val km: Int?, val date: LocalDate?, val kmLeft: Int?, val daysLeft: Long?)
+
+    fun nextService(c: Car, events: List<CarEvent>, today: LocalDate): NextService? {
+        val last = events.filter { it.carId == c.id && it.type == CarEventType.SERVICE }.maxByOrNull { it.date } ?: return null
+        val km = last.km?.plus(c.serviceKm)
+        val date = LocalDate.parse(last.date).plusMonths(c.serviceMonths.toLong())
+        val cur = lastKm(events, c.id)
+        return NextService(km, date, if (km != null && cur != null) km - cur else null, ChronoUnit.DAYS.between(today, date))
+    }
+
+    fun monthCost(events: List<CarEvent>, carId: String, ym: java.time.YearMonth) =
+        events.filter { it.carId == carId && runCatching { java.time.YearMonth.from(LocalDate.parse(it.date)) == ym }.getOrDefault(false) }.sumOf { it.cost }
+}
+
+// ---------- Дом ----------
+@Serializable
+data class Meter(val id: String, val name: String, val emoji: String = "💧", val unit: String = "м³", val tariff: Long = 0)
+
+@Serializable
+data class MeterReading(val meterId: String, val date: String, val value: Double)
+
+val METER_TEMPLATES = listOf(
+    Meter("t1", "Холодная вода", "🚰", "м³"), Meter("t2", "Горячая вода", "♨", "м³"),
+    Meter("t3", "Электричество", "⚡", "кВт·ч"), Meter("t4", "Газ", "🔥", "м³"), Meter("t5", "Отопление", "🌡", "Гкал"),
+)
+
+object Meters {
+    /** Расход между двумя последними показаниями. */
+    fun lastUse(readings: List<MeterReading>, id: String): Double? {
+        val r = readings.filter { it.meterId == id }.sortedBy { it.date }
+        if (r.size < 2) return null
+        return r.last().value - r[r.size - 2].value
+    }
+}
+
+// ---------- Питомцы ----------
+@Serializable
+data class Pet(val id: String, val name: String, val kind: String = "🐶", val breed: String = "", val birth: String? = null, val chip: String = "")
+
+enum class PetEventType(val title: String, val emoji: String, val repeatMonths: Int?) {
+    VACCINE("Прививка", "💉", 12), PARASITES("От паразитов", "🪲", 3), VET("Ветеринар", "🩺", null),
+    GROOMING("Груминг", "✂", 2), WEIGHT("Вес", "⚖", null), MEDS("Лекарство", "💊", null), OTHER("Другое", "🐾", null),
+}
+
+@Serializable
+data class PetEvent(
+    val id: String,
+    val petId: String,
+    val type: PetEventType,
+    val date: String,
+    val next: String? = null,
+    val weight: Double? = null,
+    val note: String = "",
+)
+
+object Pets {
+    fun upcoming(events: List<PetEvent>, today: LocalDate, days: Long = 14): List<PetEvent> = events
+        .filter { e -> e.next != null && events.none { o -> o.petId == e.petId && o.type == e.type && o.date > e.date } }
+        .filter { val d = LocalDate.parse(it.next); !d.isAfter(today.plusDays(days)) }
+        .sortedBy { it.next }
+
+    fun ageText(birth: String?, today: LocalDate): String? {
+        val b = birth?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
+        val m = ChronoUnit.MONTHS.between(b, today)
+        return if (m < 12) "$m мес." else "${m / 12} г." + if (m % 12 > 0) " ${m % 12} мес." else ""
+    }
+}

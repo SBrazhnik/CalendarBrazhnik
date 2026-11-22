@@ -64,6 +64,12 @@ enum class Tab(val title: String, val description: String) {
     HEALTH("Здоровье", "Питание, вода, вес, шаги и сон из Samsung Health"),
     DOCS("Документы", "Паспорта, права, полисы, гарантии, подписки и их сроки"),
     ACCOUNTS("Подключения", "Samsung Health, Google, Яндекс, Telegram и другие учётные записи"),
+    SHOPPING("Покупки", "Списки покупок: продукты, аптека, дом — отмечайте в магазине"),
+    GOALS("Цели", "Цели на год по сферам жизни: шаги и прогресс"),
+    JOURNAL("Дневник", "Запись дня, благодарности и лучший момент"),
+    CAR("Авто", "Заправки, ТО, расходы, расход топлива и пробег"),
+    HOME_UTIL("Дом", "Показания счётчиков, расход и напоминание передать"),
+    PETS("Питомцы", "Прививки, обработки, ветеринар и вес питомцев"),
     GUIDE("Инструкции", "Как пользоваться каждым модулем — по шагам с картинками"),
     MONEY("Расходы", "Общие чеки и кто кому должен"),
     ANALYSIS("Анализ", "Дни и часы по направлениям"),
@@ -184,7 +190,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         },
     )
         private set
-    var disabledModules by mutableStateOf(loadTabs("modules_disabled", emptyList()).toSet())
+    var disabledModules by mutableStateOf(
+        loadTabs("modules_disabled", emptyList()).toSet().let { d ->
+            // Авто, Дом и Питомцы нужны не всем — включаются в «Модулях».
+            if (!uiPrefs.getBoolean("migr_life", false)) {
+                val nd = d + listOf(Tab.CAR, Tab.HOME_UTIL, Tab.PETS)
+                uiPrefs.edit().putBoolean("migr_life", true).putString("modules_disabled", nd.joinToString(",") { it.name }).apply()
+                nd
+            } else d
+        },
+    )
         private set
     /** Модули, которые НЕ показываются в нижней панели (по умолчанию там первые четыре). */
     var unpinnedModules by mutableStateOf(
@@ -839,6 +854,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Пришло из «Поделиться» — ждёт выбора, куда сохранить. */
     var incoming by mutableStateOf<SharedText?>(null)
+
+    fun saveIncomingAsShopping() {
+        val sh = incoming ?: return
+        incoming = null
+        updateWork { w0 ->
+            var w = w0
+            val list = w.shopLists.firstOrNull { !it.archived } ?: app.calstats.work.ShopList(newId(), "Продукты").also { w = w.copy(shopLists = w.shopLists + it) }
+            val items = app.calstats.work.Shop.parse(sh.text).map { (n, q) -> app.calstats.work.ShopItem(newId(), list.id, n, q) }
+            w.copy(shopItems = w.shopItems + items)
+        }
+        tab = Tab.SHOPPING
+    }
 
     fun saveIncomingAsNote(navigate: Boolean = true) {
         val sh = incoming ?: return

@@ -385,7 +385,7 @@ private fun LargeCard(vm: MainViewModel, t: Tab) {
         Tab.ANALYSIS -> AnalysisSummary(vm)
         Tab.WISHES -> WishesSummary(vm)
         Tab.NOTES -> NotesSummary(vm)
-        Tab.ACCOUNTS, Tab.GUIDE -> MediumTile(vm, t, Modifier.fillMaxWidth())
+        Tab.ACCOUNTS, Tab.GUIDE, Tab.SHOPPING, Tab.GOALS, Tab.JOURNAL, Tab.CAR, Tab.HOME_UTIL, Tab.PETS -> MediumTile(vm, t, Modifier.fillMaxWidth())
         Tab.HOME -> {}
     }
 }
@@ -471,6 +471,32 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
             TileInfo("$n", "подключено", "Samsung Health, Google, Telegram")
         }
         Tab.GUIDE -> TileInfo("${GUIDES.size}", "инструкций", "Как пользоваться модулями")
+        Tab.SHOPPING -> {
+            val left = w.shopItems.filter { !it.done }
+            TileInfo("${left.size}", "купить", left.take(3).joinToString(", ") { it.name }.ifBlank { "список пуст" })
+        }
+        Tab.GOALS -> {
+            val g = w.lifeGoals.filter { it.year == today.year }
+            TileInfo(if (g.isEmpty()) "—" else "${(g.map { it.progress }.average() * 100).toInt()}%", "прогресс года", "${g.count { it.done }} из ${g.size} целей", if (g.isEmpty()) null else g.map { it.progress }.average().toFloat())
+        }
+        Tab.JOURNAL -> {
+            val s = app.calstats.work.Journal.streak(w.journal, today)
+            val wrote = w.journal.any { it.date == today.toString() && it.text.isNotBlank() }
+            TileInfo("$s", "дней подряд", if (wrote) "сегодня записано ✓" else "запишите день")
+        }
+        Tab.CAR -> {
+            val c = w.cars.firstOrNull()
+            TileInfo(c?.let { SplitMath.money(app.calstats.work.CarMath.monthCost(w.carEvents, it.id, java.time.YearMonth.from(today))) } ?: "—", "за месяц",
+                c?.let { app.calstats.work.CarMath.nextService(it, w.carEvents, today)?.kmLeft?.let { k -> "до ТО $k км" } ?: it.name } ?: "добавьте машину")
+        }
+        Tab.HOME_UTIL -> {
+            val due = w.meters.count { m -> w.meterReadings.none { it.meterId == m.id && java.time.YearMonth.from(java.time.LocalDate.parse(it.date)) == java.time.YearMonth.from(today) } }
+            TileInfo("$due", "не передано", if (w.meters.isEmpty()) "добавьте счётчики" else "показания за месяц", alert = due > 0 && today.dayOfMonth >= 15)
+        }
+        Tab.PETS -> {
+            val up = app.calstats.work.Pets.upcoming(w.petEvents, today, 14)
+            TileInfo("${w.pets.size}", "питомцев", up.firstOrNull()?.let { "${it.type.emoji} ${it.type.title.lowercase()} скоро" } ?: "всё по графику", alert = up.isNotEmpty())
+        }
         Tab.HOME -> TileInfo("", "", "")
     }
 }

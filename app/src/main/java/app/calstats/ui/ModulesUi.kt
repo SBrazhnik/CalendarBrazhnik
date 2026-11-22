@@ -75,6 +75,12 @@ fun moduleColor(t: Tab): Color = when (t) {
     Tab.DOCS -> Color(0xFF5A6B7D)
     Tab.ACCOUNTS -> Color(0xFF7C5CE6)
     Tab.GUIDE -> Color(0xFF9A7B3F)
+    Tab.SHOPPING -> Color(0xFF3F8A5A)
+    Tab.GOALS -> Color(0xFFC27B44)
+    Tab.JOURNAL -> Color(0xFF7A5C8C)
+    Tab.CAR -> Color(0xFF4A5A6A)
+    Tab.HOME_UTIL -> Color(0xFF3F7C9A)
+    Tab.PETS -> Color(0xFFA0683F)
     Tab.MONEY -> Color(0xFF8C5A3C)
     Tab.ANALYSIS -> Color(0xFF6C4F7A)
     Tab.WISHES -> Color(0xFFB0656B)
@@ -95,6 +101,12 @@ fun ModuleIcon(t: Tab, selected: Boolean = false, size: Dp = 24.dp, tint: Color?
         Tab.DOCS -> Icon(painterResource(R.drawable.ic_docs), null, m, tint = c)
         Tab.ACCOUNTS -> Icon(painterResource(R.drawable.ic_link), null, m, tint = c)
         Tab.GUIDE -> Icon(painterResource(R.drawable.ic_book), null, m, tint = c)
+        Tab.SHOPPING -> Icon(painterResource(R.drawable.ic_cart), null, m, tint = c)
+        Tab.GOALS -> Icon(painterResource(R.drawable.ic_flag), null, m, tint = c)
+        Tab.JOURNAL -> Icon(painterResource(R.drawable.ic_journal), null, m, tint = c)
+        Tab.CAR -> Icon(painterResource(R.drawable.ic_car), null, m, tint = c)
+        Tab.HOME_UTIL -> Icon(painterResource(R.drawable.ic_house), null, m, tint = c)
+        Tab.PETS -> Icon(painterResource(R.drawable.ic_paw), null, m, tint = c)
         Tab.MONEY -> Icon(painterResource(R.drawable.ic_group), null, m, tint = c)
         Tab.ANALYSIS -> Icon(painterResource(R.drawable.ic_tab_stats), null, m, tint = c)
         Tab.WISHES -> Icon(painterResource(R.drawable.ic_tab_gift), null, m, tint = c)
@@ -223,6 +235,7 @@ fun IncomingDialog(vm: MainViewModel, sh: SharedText) {
                         }
                     }
                     if (vm.isEnabled(Tab.TASKS)) ChoiceRow(Tab.TASKS, "Задача") { vm.saveIncomingAsTask() }
+                    if (vm.isEnabled(Tab.SHOPPING)) ChoiceRow(Tab.SHOPPING, "В покупки") { vm.saveIncomingAsShopping() }
                 } else {
                     lists.forEach { l ->
                         Row(
