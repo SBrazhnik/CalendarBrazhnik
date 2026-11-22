@@ -295,6 +295,8 @@ object HealthStats {
             Metric("steps", "Шаги", "", hc(cur.filter { it != today }, h?.steps), hc(prev, h?.steps), true),
             Metric("sleep", "Сон", "ч", hc(cur, h?.sleepMin)?.div(60), hc(prev, h?.sleepMin)?.div(60), true),
             Metric("weight", "Вес", "кг", weightAt(cur), weightAt(prev), null),
+            Metric("mood", "Настроение", "из 5", avg(w.moods.filter { runCatching { LocalDate.parse(it.date) in cur }.getOrDefault(false) }.map { it.mood.toDouble() }),
+                avg(w.moods.filter { runCatching { LocalDate.parse(it.date) in prev }.getOrDefault(false) }.map { it.mood.toDouble() }), true),
         )
         val logged = cur.count { food.containsKey(it.toString()) }
         return Result(metrics, conclusions(w, metrics, logged, days, today), logged, days)

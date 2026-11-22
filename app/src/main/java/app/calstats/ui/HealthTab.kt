@@ -110,7 +110,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.math.roundToInt
 
-private enum class HView(val title: String) { TODAY("День"), FOOD("Питание"), BODY("Активность"), STATS("Статистика"), PROFILE("Профиль") }
+private enum class HView(val title: String) { TODAY("День"), FOOD("Питание"), BODY("Активность"), MEDS("Лекарства"), CYCLE("Цикл"), STATS("Статистика"), PROFILE("Профиль") }
 
 private val PROT = Color(0xFF4A6A8A)
 private val FAT = Color(0xFFC9A46A)
@@ -151,13 +151,16 @@ fun HealthTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                HView.entries.forEach { v -> FilterChip(selected = view == v, onClick = { view = v }, label = { Text(v.title) }) }
+                val female = vm.work.healthProfile?.sex == app.calstats.work.Sex.FEMALE || vm.work.cycles.isNotEmpty()
+                HView.entries.filter { it != HView.CYCLE || female }.forEach { v -> FilterChip(selected = view == v, onClick = { view = v }, label = { Text(v.title) }) }
             }
             when (view) {
                 HView.TODAY -> TodayView(vm, day, { day = it }, onFood = { foodFor = day to it }, onProfile = { view = HView.PROFILE }, onWeight = { weightDialog = true })
                 HView.FOOD -> FoodView(vm, day, { day = it }) { foodFor = day to it }
                 HView.BODY -> BodyView(vm) { weightDialog = true }
                 HView.STATS -> StatsView(vm) { d -> day = d; view = HView.TODAY }
+                HView.MEDS -> MedsView(vm)
+                HView.CYCLE -> CycleView(vm)
                 HView.PROFILE -> ProfileView(vm)
             }
         }
@@ -237,6 +240,8 @@ private fun TodayView(vm: MainViewModel, today: LocalDate, onDay: (LocalDate) ->
         }
         item { WaterCard(vm, norms?.waterMl ?: 2000, today) }
         item { ActivityCard(vm, p, today, onWeight) }
+        item { MoodCard(vm, today) }
+        if (isToday) item { FastingCard(vm) }
         if (tips.isNotEmpty()) {
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
@@ -508,6 +513,7 @@ private fun FoodSheet(vm: MainViewModel, date: LocalDate, meal0: Meal, onDismiss
     var error by remember { mutableStateOf<String?>(null) }
     var pick by remember { mutableStateOf<FoodItem?>(null) }
     var custom by remember { mutableStateOf(false) }
+    var recipe by remember { mutableStateOf(false) }
     val w = vm.work
 
     val local = remember(query, w.recentFoods, w.customFoods) {
@@ -569,6 +575,7 @@ private fun FoodSheet(vm: MainViewModel, date: LocalDate, meal0: Meal, onDismiss
                 OutlinedButton(onClick = { searchOnline() }, enabled = query.isNotBlank() && !loading, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("В интернете") }
                 OutlinedButton(onClick = { scan() }, enabled = !loading, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Штрихкод") }
                 OutlinedButton(onClick = { custom = true }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Свой") }
+                OutlinedButton(onClick = { recipe = true }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Рецепт") }
             }
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
@@ -595,6 +602,7 @@ private fun FoodSheet(vm: MainViewModel, date: LocalDate, meal0: Meal, onDismiss
             pick = null
         }
     }
+    if (recipe) RecipeDialog(vm, onDismiss = { recipe = false }) { f -> recipe = false; pick = f }
     if (custom) {
         CustomFoodDialog(query, onDismiss = { custom = false }) { f ->
             vm.updateWork { HealthOps.saveCustomFood(it, f) }
@@ -945,7 +953,7 @@ private fun StatTile(m: HealthStats.Metric, modifier: Modifier) {
             Text(
                 when {
                     v == null -> "—"
-                    m.key == "sleep" || m.key == "weight" -> "%.1f".format(v)
+                    m.key == "sleep" || m.key == "weight" || m.key == "mood" -> "%.1f".format(v)
                     else -> "${v.roundToInt()}"
                 } + if (v != null && m.unit.isNotEmpty()) " ${m.unit}" else "",
                 style = MaterialTheme.typography.displaySmall.copy(fontSize = 26.sp, lineHeight = 30.sp),

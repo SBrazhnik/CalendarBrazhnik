@@ -28,18 +28,18 @@ object BankNotify {
         "com.yandex.bank" to "Яндекс Банк", "ru.psbank.online" to "ПСБ",
     )
 
-    private val EXPENSE = Regex("(?i)(покупк|оплат|списан|перевод\\s|снят|платеж|платёж|расход)")
-    private val INCOME = Regex("(?i)(зачислен|пополнен|поступлен|возврат|перевод от|входящий|кэшбэк|cashback)")
+    private val EXPENSE = Regex("(?iu)(покупк|оплат|списан|перевод\\s|снят|платеж|платёж|расход)")
+    private val INCOME = Regex("(?iu)(зачислен|пополнен|поступлен|возврат|перевод от|входящий|кэшбэк|cashback)")
     private val MONEY = Regex("([+−-]?)\\s?(\\d{1,3}(?:[\\s\\u00A0\\u202F]\\d{3})*(?:[.,]\\d{1,2})?)\\s?(?:₽|р\\b|руб|RUB|RUR)")
-    private val NOISE = Regex("(?i)(баланс|доступно|остаток|комисси)[^\\n]*")
+    private val NOISE = Regex("(?iu)(баланс|доступно|остаток|комисси)[^\\n]*")
 
     fun parse(pkg: String, title: String?, text: String?, date: String, id: String): PendingTx? {
         val bank = BANKS[pkg] ?: return null
         val full = listOfNotNull(title, text).joinToString(" ").replace('\n', ' ')
         if (full.isBlank()) return null
         // Код подтверждения, вход и т.п. — не операции
-        if (Regex("(?i)(код|пароль|вход в|никому не сообщ)").containsMatchIn(full)) return null
-        val isIncome = INCOME.containsMatchIn(full) && !Regex("(?i)покупк|оплат").containsMatchIn(full)
+        if (Regex("(?iu)(код|пароль|вход в|никому не сообщ)").containsMatchIn(full)) return null
+        val isIncome = INCOME.containsMatchIn(full) && !Regex("(?iu)покупк|оплат").containsMatchIn(full)
         val isExpense = EXPENSE.containsMatchIn(full)
         val clean = NOISE.replace(full, " ")
         val m = MONEY.find(clean) ?: return null

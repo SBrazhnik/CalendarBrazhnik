@@ -833,6 +833,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             TasksWidget.refresh(getApplication())
             app.calstats.widget.TodayWidget.refresh(getApplication())
             runCatching { Notify.scheduleHabits(getApplication(), w) }
+            runCatching { Notify.scheduleMeds(getApplication(), w) }
         }
     }
 

@@ -38,7 +38,7 @@ object QuickParse {
         }
 
         // через N минут/часов/дней
-        cut(Regex("(?i)\\sчерез\\s(\\d+|полчаса|час)\\s?(минут[уы]?|мин|час(?:а|ов)?|д(?:ень|ня|ней))?\\s")) { m ->
+        cut(Regex("(?iu)\\sчерез\\s(\\d+|полчаса|час)\\s?(минут[уы]?|мин|час(?:а|ов)?|д(?:ень|ня|ней))?\\s")) { m ->
             val raw = m.groupValues[1].lowercase()
             val unit = m.groupValues[2].lowercase()
             when {
@@ -49,11 +49,11 @@ object QuickParse {
                 unit.startsWith("д") -> date = today.plusDays(raw.toLong())
             }
         }
-        cut(Regex("(?i)\\sпослезавтра\\s")) { date = today.plusDays(2) }
-        cut(Regex("(?i)\\sзавтра\\s")) { date = today.plusDays(1) }
-        cut(Regex("(?i)\\sсегодня\\s")) { date = today }
+        cut(Regex("(?iu)\\sпослезавтра\\s")) { date = today.plusDays(2) }
+        cut(Regex("(?iu)\\sзавтра\\s")) { date = today.plusDays(1) }
+        cut(Regex("(?iu)\\sсегодня\\s")) { date = today }
         // 25 ноября / 25.11 / 25.11.2026
-        cut(Regex("(?i)\\s(\\d{1,2})\\s(январ|феврал|март|апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр)[а-яё]*\\s")) { m ->
+        cut(Regex("(?iu)\\s(\\d{1,2})\\s(январ|феврал|март|апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр)[а-яё]*\\s")) { m ->
             val stem = m.groupValues[2].lowercase()
             val mi = MONTHS.indexOfFirst { if (it == "ма") stem.startsWith("ма") && !stem.startsWith("март") else stem.startsWith(it) }
             var d = runCatching { LocalDate.of(today.year, mi + 1, m.groupValues[1].toInt()) }.getOrNull()
@@ -69,7 +69,7 @@ object QuickParse {
         // в пятницу / в пт
         for ((k, dow) in DOW) {
             val word = if (k.length == 2) k else "$k[а-яё]*"
-            val ok = cut(Regex("(?i)\\s(?:во?\\s)?(?:следующ\\S*\\s)?$word\\s")) {
+            val ok = cut(Regex("(?iu)\\s(?:во?\\s)?(?:следующ\\S*\\s)?$word\\s")) {
                 var d = today.plusDays(1)
                 while (d.dayOfWeek != dow) d = d.plusDays(1)
                 date = d
@@ -77,9 +77,9 @@ object QuickParse {
             if (ok) break
         }
         // время: в 15, в 15:30, в 9 вечера, 18:00
-        cut(Regex("(?i)\\s(?:в|к)?\\s?(\\d{1,2})(?::|\\.)(\\d{2})\\s")) { m ->
+        cut(Regex("(?iu)\\s(?:в|к)?\\s?(\\d{1,2})(?::|\\.)(\\d{2})\\s")) { m ->
             time = runCatching { LocalTime.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull()
-        } || cut(Regex("(?i)\\s(?:в|к)\\s(\\d{1,2})\\s?(утра|дня|вечера|ночи|ч(?:ас(?:а|ов)?)?)?\\s")) { m ->
+        } || cut(Regex("(?iu)\\s(?:в|к)\\s(\\d{1,2})\\s?(утра|дня|вечера|ночи|ч(?:ас(?:а|ов)?)?)?\\s")) { m ->
             var h = m.groupValues[1].toInt()
             when (m.groupValues[2].lowercase()) {
                 "вечера", "дня" -> if (h < 12) h += 12

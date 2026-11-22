@@ -16,6 +16,7 @@ import androidx.core.content.ContextCompat
 import app.calstats.work.DebtMath
 import app.calstats.work.HabitKind
 import app.calstats.work.HabitMath
+import app.calstats.work.HealthMore
 import app.calstats.work.ME
 import app.calstats.work.SplitMath
 import app.calstats.work.Status
@@ -41,6 +42,8 @@ object Notify {
     const val ACTION_FOCUS = "app.calstats.N_FOCUS"
     const val ACTION_HABIT = "app.calstats.N_HABIT"
     const val ACTION_HABIT_DONE = "app.calstats.N_HABIT_DONE"
+    const val ACTION_MED = "app.calstats.N_MED"
+    const val ACTION_MED_DONE = "app.calstats.N_MED_DONE"
     private const val CH_DAY = "daily"
     private const val CH_EVENTS = "events"
 
@@ -111,6 +114,20 @@ object Notify {
         }
     }
 
+    /** Напоминания о лекарствах: на каждое время приёма. */
+    fun scheduleMeds(ctx: Context, w: app.calstats.work.Workspace = WorkStore(ctx).load()) {
+        val am = ctx.getSystemService(AlarmManager::class.java) ?: return
+        w.meds.forEach { m ->
+            m.times.forEachIndexed { i, t ->
+                val code = 40_000 + ((m.id.hashCode() * 7 + i) and 0x7FFF)
+                val p = pi(ctx, ACTION_MED, code) { it.putExtra("med", m.id).putExtra("time", t) }
+                am.cancel(p)
+                val lt = runCatching { LocalTime.parse(t) }.getOrNull()
+                if (m.active && lt != null) at(am, nextAt(lt), p)
+            }
+        }
+    }
+
     /** Будильник окончания фокуса (null — отменить). */
     fun focusAlarm(ctx: Context, at: Long?, title: String) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
@@ -141,6 +158,7 @@ object Notify {
         am.setInexactRepeating(AlarmManager.RTC, System.currentTimeMillis() + 3 * 3600_000L, 3 * 3600_000L, pi(ctx, ACTION_RESCAN, 502))
         scheduleEvents(ctx)
         scheduleHabits(ctx)
+        scheduleMeds(ctx)
     }
 
     private fun hasCalendar(ctx: Context) =
@@ -275,6 +293,40 @@ object Notify {
                     NotificationManagerCompat.from(ctx).notify(nid, n)
                 } catch (_: SecurityException) {
                 }
+            }
+            ACTION_MED -> {
+                val id = intent.getStringExtra("med") ?: return
+                val time = intent.getStringExtra("time") ?: return
+                val w = WorkStore(ctx).load()
+                scheduleMeds(ctx, w)
+                val m = HealthMore.medsOn(w, today).firstOrNull { it.first.id == id && it.second == time }?.first ?: return
+                if (HealthMore.taken(w, id, today, time) || !DrinkReminder.canNotify(ctx)) return
+                channels(ctx)
+                val nid = 41_000 + ((id.hashCode() * 7 + time.hashCode()) and 0x7FFF)
+                val done = PendingIntent.getBroadcast(
+                    ctx, nid, Intent(ctx, NotifyReceiver::class.java).setAction(ACTION_MED_DONE).putExtra("med", id).putExtra("time", time).putExtra("nid", nid),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                val n = NotificationCompat.Builder(ctx, CH_EVENTS)
+                    .setSmallIcon(R.drawable.ic_notify).setColor(0xFF1F3A2B.toInt())
+                    .setContentTitle("💊 ${m.name}")
+                    .setContentText(listOf(time, m.dose).filter { it.isNotBlank() }.joinToString(" · "))
+                    .setAutoCancel(true)
+                    .addAction(0, "Принял ✓", done)
+                    .build()
+                try {
+                    @Suppress("MissingPermission")
+                    NotificationManagerCompat.from(ctx).notify(nid, n)
+                } catch (_: SecurityException) {
+                }
+            }
+            ACTION_MED_DONE -> {
+                val id = intent.getStringExtra("med") ?: return
+                val time = intent.getStringExtra("time") ?: return
+                val s = WorkStore(ctx)
+                val w = s.load()
+                if (!HealthMore.taken(w, id, today, time)) s.save(HealthMore.toggleMed(w, id, today, time))
+                NotificationManagerCompat.from(ctx).cancel(intent.getIntExtra("nid", 0))
             }
             ACTION_HABIT_DONE -> {
                 val id = intent.getStringExtra("habit") ?: return
