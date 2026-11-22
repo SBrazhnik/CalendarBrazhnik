@@ -21,6 +21,13 @@ data class Habit(
     val days: List<Int> = (1..7).toList(),
     val archived: Boolean = false,
     val created: String = LocalDate.now().toString(),
+    /** Напоминание «ЧЧ:ММ», если привычка ещё не отмечена. */
+    val remind: String? = null,
+    /** Цель «N раз в неделю» вместо «каждый выбранный день». */
+    val perWeek: Int? = null,
+    /** Отмечать автоматически по Samsung Health: STEPS (шагов ≥ autoMin) или SLEEP (минут сна ≥ autoMin). */
+    val auto: String? = null,
+    val autoMin: Int = 0,
 ) {
     val createdDate: LocalDate get() = runCatching { LocalDate.parse(created) }.getOrDefault(LocalDate.now())
     fun scheduled(d: LocalDate) = d.dayOfWeek.value in days
@@ -28,7 +35,7 @@ data class Habit(
 
 /** Отметка за день. Для «делать» — сколько сделано; для «бросить» — 1 сорвался, 0 удержался. */
 @Serializable
-data class HabitLog(val habitId: String, val date: String, val value: Int)
+data class HabitLog(val habitId: String, val date: String, val value: Int, val note: String = "")
 
 object HabitMath {
     fun values(logs: List<HabitLog>, habitId: String): Map<LocalDate, Int> =
@@ -36,8 +43,22 @@ object HabitMath {
 
     fun done(h: Habit, v: Map<LocalDate, Int>, d: LocalDate) = (v[d] ?: 0) >= h.target
 
+    /** Сколько дней на неделе (пн–вс) с датой [d] привычка выполнена. */
+    fun weekCount(h: Habit, v: Map<LocalDate, Int>, d: LocalDate): Int {
+        val mon = d.minusDays(d.dayOfWeek.value - 1L)
+        return (0..6).count { done(h, v, mon.plusDays(it.toLong())) }
+    }
+
     /** Серия выполнений: не выполненный сегодня день серию не рвёт, пока он не закончился; дни вне графика пропускаются. */
     fun streak(h: Habit, v: Map<LocalDate, Int>, today: LocalDate): Int {
+        h.perWeek?.let { goal ->
+            // Серия в неделях: текущая неделя считается, если цель уже выполнена.
+            var mon = today.minusDays(today.dayOfWeek.value - 1L)
+            if (weekCount(h, v, mon) < goal) mon = mon.minusWeeks(1)
+            var n = 0
+            while (n < 520 && weekCount(h, v, mon) >= goal) { n++; mon = mon.minusWeeks(1) }
+            return n
+        }
         var d = if (done(h, v, today) || !h.scheduled(today)) today else today.minusDays(1)
         var n = 0
         while (!d.isBefore(h.createdDate.minusDays(400))) {
@@ -98,10 +119,30 @@ object HabitOps {
     /** Записать значение за день (null — снять отметку). */
     fun set(w: Workspace, habitId: String, date: LocalDate, value: Int?): Workspace {
         val rest = w.habitLogs.filter { !(it.habitId == habitId && it.date == date.toString()) }
-        return w.copy(habitLogs = if (value == null) rest else rest + HabitLog(habitId, date.toString(), value))
+        val note = w.habitLogs.firstOrNull { it.habitId == habitId && it.date == date.toString() }?.note.orEmpty()
+        return w.copy(habitLogs = if (value == null && note.isEmpty()) rest else rest + HabitLog(habitId, date.toString(), value ?: 0, note))
     }
 
     /** Нажатие на день у «делать»: +1 до цели, после цели — сброс. */
+    fun setNote(w: Workspace, habitId: String, date: LocalDate, note: String): Workspace {
+        val cur = w.habitLogs.firstOrNull { it.habitId == habitId && it.date == date.toString() }
+        val rest = w.habitLogs.filter { it !== cur }
+        return w.copy(habitLogs = rest + (cur?.copy(note = note) ?: HabitLog(habitId, date.toString(), 0, note)))
+    }
+
+    /** Автоотметки по шагам и сну из Samsung Health. */
+    fun applyAuto(w: Workspace, s: HealthSnapshot): Workspace {
+        var out = w
+        w.habits.filter { !it.archived && it.auto != null && it.autoMin > 0 }.forEach { h ->
+            s.days.forEachIndexed { i, d ->
+                val v = when (h.auto) { "STEPS" -> s.steps.getOrNull(i); "SLEEP" -> s.sleepMin.getOrNull(i); else -> null } ?: return@forEachIndexed
+                val cur = HabitMath.values(out.habitLogs, h.id)[d] ?: 0
+                if (v >= h.autoMin && cur < h.target) out = set(out, h.id, d, h.target)
+            }
+        }
+        return out
+    }
+
     fun tap(w: Workspace, h: Habit, date: LocalDate): Workspace {
         val cur = HabitMath.values(w.habitLogs, h.id)[date] ?: 0
         return set(w, h.id, date, if (cur >= h.target) null else cur + 1)

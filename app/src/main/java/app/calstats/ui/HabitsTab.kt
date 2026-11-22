@@ -272,7 +272,10 @@ private fun DoCard(vm: MainViewModel, h: Habit, weekStart: LocalDate, onOpen: ()
                     listOfNotNull(
                         if (streak > 0) "🔥 $streak" else null,
                         if (h.target > 1) "сегодня $todayV/${h.target} ${h.unit}".trim() else h.unit.takeIf { it.isNotBlank() },
-                        if (h.days.size < 7) h.days.sorted().joinToString(",") { Fmt.weekdayShort(it - 1).lowercase() } else null,
+                        h.perWeek?.let { "${HabitMath.weekCount(h, v, vm.today)}/$it за неделю" },
+                        if (h.perWeek == null && h.days.size < 7) h.days.sorted().joinToString(",") { Fmt.weekdayShort(it - 1).lowercase() } else null,
+                        h.remind?.let { "⏰ $it" },
+                        when (h.auto) { "STEPS" -> "🚶 авто"; "SLEEP" -> "😴 авто"; else -> null },
                     ).joinToString(" · ").ifEmpty { "каждый день" },
                     color,
                     Modifier.weight(1f),
@@ -394,6 +397,23 @@ private fun HabitDetailSheet(vm: MainViewModel, id: String, onEdit: (Habit) -> U
                     StatBox(v.count { it.value >= h.target }.toString(), "всего дней")
                 }
             }
+            if (h != null && !isAlcohol) {
+                val log = w.habitLogs.firstOrNull { it.habitId == h.id && it.date == vm.today.toString() }
+                var note by remember(h.id) { mutableStateOf(log?.note.orEmpty()) }
+                OutlinedTextField(
+                    note, { note = it },
+                    Modifier.fillMaxWidth(),
+                    label = { Text("Заметка за сегодня") },
+                    placeholder = { Text("Как прошло, что помогло или помешало") },
+                    trailingIcon = {
+                        if (note != log?.note.orEmpty()) TextButton(onClick = { vm.updateWork { HabitOps.setNote(it, h.id, vm.today, note.trim()) } }) { Text("OK") }
+                    },
+                )
+                val notes = w.habitLogs.filter { it.habitId == h.id && it.note.isNotBlank() && it.date != vm.today.toString() }.sortedByDescending { it.date }.take(5)
+                notes.forEach { n ->
+                    Text("${Fmt.dateNoYear(java.time.LocalDate.parse(n.date))} — ${n.note}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             // Календарь месяца
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { month = month.minusMonths(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Назад") }
@@ -484,6 +504,11 @@ private fun HabitDialog(vm: MainViewModel, h: Habit, onDismiss: () -> Unit) {
     var days by remember { mutableStateOf(h.days.toSet()) }
     var archived by remember { mutableStateOf(h.archived) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var perWeek by remember { mutableStateOf(h.perWeek) }
+    var remind by remember { mutableStateOf(h.remind) }
+    var auto by remember { mutableStateOf(h.auto) }
+    var autoMin by remember { mutableStateOf(h.autoMin) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (exists) "Привычка" else "Новая привычка") },
@@ -509,10 +534,34 @@ private fun HabitDialog(vm: MainViewModel, h: Habit, onDismiss: () -> Unit) {
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(110.dp))
                         OutlinedTextField(unit, { unit = it }, label = { Text("Единица") }, singleLine = true, modifier = Modifier.weight(1f))
                     }
-                    Text("Дни", style = MaterialTheme.typography.titleSmall)
+                    Text("Как часто", style = MaterialTheme.typography.titleSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        (1..7).forEach { d ->
-                            FilterChip(selected = d in days, onClick = { days = if (d in days && days.size > 1) days - d else days + d }, label = { Text(Fmt.weekdayShort(d - 1)) })
+                        FilterChip(selected = perWeek == null, onClick = { perWeek = null }, label = { Text("По дням") })
+                        (1..6).forEach { n -> FilterChip(selected = perWeek == n, onClick = { perWeek = n; days = (1..7).toSet() }, label = { Text("$n раз в нед.") }) }
+                    }
+                    if (perWeek == null) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            (1..7).forEach { d ->
+                                FilterChip(selected = d in days, onClick = { days = if (d in days && days.size > 1) days - d else days + d }, label = { Text(Fmt.weekdayShort(d - 1)) })
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Напоминание", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        TextButton(onClick = {
+                            val t = remind?.let { java.time.LocalTime.parse(it) } ?: java.time.LocalTime.of(20, 0)
+                            android.app.TimePickerDialog(ctx, { _, hh, mm -> remind = "%02d:%02d".format(hh, mm) }, t.hour, t.minute, true).show()
+                        }) { Text(remind ?: "Нет") }
+                        if (remind != null) TextButton(onClick = { remind = null }) { Text("✕") }
+                    }
+                    Text("Отмечать сама по Samsung Health", style = MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        FilterChip(selected = auto == null, onClick = { auto = null }, label = { Text("Нет") })
+                        listOf(6000, 8000, 10000).forEach { n ->
+                            FilterChip(selected = auto == "STEPS" && autoMin == n, onClick = { auto = "STEPS"; autoMin = n }, label = { Text("${n / 1000} тыс. шагов") })
+                        }
+                        listOf(7, 8).forEach { hh ->
+                            FilterChip(selected = auto == "SLEEP" && autoMin == hh * 60, onClick = { auto = "SLEEP"; autoMin = hh * 60 }, label = { Text("Сон $hh ч") })
                         }
                     }
                 }
@@ -542,7 +591,9 @@ private fun HabitDialog(vm: MainViewModel, h: Habit, onDismiss: () -> Unit) {
                 vm.updateWork {
                     HabitOps.upsert(it, h.copy(name = name.trim(), emoji = emoji, color = color, kind = kind,
                         target = target.toIntOrNull()?.coerceIn(1, 999) ?: 1, unit = unit.trim(),
-                        days = if (kind == HabitKind.DO) days.sorted() else (1..7).toList(), archived = archived))
+                        days = if (kind == HabitKind.DO) days.sorted() else (1..7).toList(), archived = archived,
+                        perWeek = perWeek.takeIf { kind == HabitKind.DO }, remind = remind,
+                        auto = auto.takeIf { kind == HabitKind.DO }, autoMin = autoMin))
                 }
                 onDismiss()
             }) { Text("Сохранить") }

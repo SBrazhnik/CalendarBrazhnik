@@ -605,6 +605,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (g == 0) return@launch
             healthLoading = true
             health = runCatching { withContext(Dispatchers.IO) { HealthLink.load(ctx, 60) } }.getOrNull() ?: health
+            health?.let { s ->
+                val auto = app.calstats.work.HabitOps.applyAuto(work, s)
+                if (auto != work) updateWork { app.calstats.work.HabitOps.applyAuto(it, s) }
+            }
             healthLoading = false
         }
     }
@@ -828,6 +832,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { workStore.save(w) }
             TasksWidget.refresh(getApplication())
             app.calstats.widget.TodayWidget.refresh(getApplication())
+            runCatching { Notify.scheduleHabits(getApplication(), w) }
         }
     }
 

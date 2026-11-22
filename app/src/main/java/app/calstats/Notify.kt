@@ -39,6 +39,8 @@ object Notify {
     const val ACTION_RESCAN = "app.calstats.N_RESCAN"
     const val ACTION_WEEKLY = "app.calstats.N_WEEKLY"
     const val ACTION_FOCUS = "app.calstats.N_FOCUS"
+    const val ACTION_HABIT = "app.calstats.N_HABIT"
+    const val ACTION_HABIT_DONE = "app.calstats.N_HABIT_DONE"
     private const val CH_DAY = "daily"
     private const val CH_EVENTS = "events"
 
@@ -97,6 +99,18 @@ object Notify {
         return z.toInstant().toEpochMilli()
     }
 
+    /** Напоминания по привычкам: каждая — свой будильник на ближайшее время. */
+    fun scheduleHabits(ctx: Context, w: app.calstats.work.Workspace = WorkStore(ctx).load()) {
+        val am = ctx.getSystemService(AlarmManager::class.java) ?: return
+        w.habits.forEach { h ->
+            val code = 30_000 + (h.id.hashCode() and 0xFFFF)
+            val p = pi(ctx, ACTION_HABIT, code) { it.putExtra("habit", h.id) }
+            am.cancel(p)
+            val t = h.remind?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
+            if (t != null && !h.archived) at(am, nextAt(t), p)
+        }
+    }
+
     /** Будильник окончания фокуса (null — отменить). */
     fun focusAlarm(ctx: Context, at: Long?, title: String) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
@@ -126,6 +140,7 @@ object Notify {
         // Раз в 3 часа пересматриваем события — чтобы поймать добавленные в Google Календаре.
         am.setInexactRepeating(AlarmManager.RTC, System.currentTimeMillis() + 3 * 3600_000L, 3 * 3600_000L, pi(ctx, ACTION_RESCAN, 502))
         scheduleEvents(ctx)
+        scheduleHabits(ctx)
     }
 
     private fun hasCalendar(ctx: Context) =
@@ -229,6 +244,47 @@ object Notify {
                 scheduleAll(ctx)
             }
             ACTION_RESCAN -> scheduleEvents(ctx)
+            ACTION_HABIT -> {
+                val id = intent.getStringExtra("habit") ?: return
+                val w = WorkStore(ctx).load()
+                val h = w.habits.firstOrNull { it.id == id } ?: return
+                scheduleHabits(ctx, w)
+                val v = HabitMath.values(w.habitLogs, h.id)
+                val due = if (h.perWeek != null) HabitMath.weekCount(h, v, today) < h.perWeek else h.scheduled(today) && !HabitMath.done(h, v, today)
+                if (!due || HabitMath.done(h, v, today)) return
+                if (!DrinkReminder.canNotify(ctx)) return
+                channels(ctx)
+                val nid = 31_000 + (h.id.hashCode() and 0xFFFF)
+                val done = PendingIntent.getBroadcast(
+                    ctx, nid, Intent(ctx, NotifyReceiver::class.java).setAction(ACTION_HABIT_DONE).putExtra("habit", h.id).putExtra("nid", nid),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                val open = PendingIntent.getActivity(
+                    ctx, nid, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra(MainActivity.EXTRA_TAB, Tab.HABITS.name),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                val n = NotificationCompat.Builder(ctx, CH_DAY)
+                    .setSmallIcon(R.drawable.ic_notify).setColor(0xFF1F3A2B.toInt())
+                    .setContentTitle("${h.emoji} ${h.name}")
+                    .setContentText(if (h.perWeek != null) "На этой неделе ${HabitMath.weekCount(h, v, today)} из ${h.perWeek}" else "Ещё не отмечено сегодня")
+                    .setContentIntent(open).setAutoCancel(true)
+                    .addAction(0, "Готово ✓", done)
+                    .build()
+                try {
+                    @Suppress("MissingPermission")
+                    NotificationManagerCompat.from(ctx).notify(nid, n)
+                } catch (_: SecurityException) {
+                }
+            }
+            ACTION_HABIT_DONE -> {
+                val id = intent.getStringExtra("habit") ?: return
+                val s = WorkStore(ctx)
+                val w = s.load()
+                val h = w.habits.firstOrNull { it.id == id } ?: return
+                s.save(app.calstats.work.HabitOps.set(w, id, today, h.target))
+                NotificationManagerCompat.from(ctx).cancel(intent.getIntExtra("nid", 0))
+                app.calstats.widget.TodayWidget.refresh(ctx)
+            }
             ACTION_FOCUS -> post(ctx, CH_EVENTS, 4504, "⏰ Время вышло", listOf(intent.getStringExtra("title").orEmpty().ifBlank { "Фокус" } + " — откройте приложение, чтобы записать время"), Tab.TASKS)
             ACTION_WEEKLY -> {
                 val r = WeekReport.build(ctx, WorkStore(ctx).load(), today)
