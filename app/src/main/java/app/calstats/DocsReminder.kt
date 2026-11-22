@@ -14,6 +14,7 @@ import app.calstats.work.DocsMath
 import app.calstats.work.SplitMath
 import app.calstats.work.WorkStore
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
@@ -105,5 +106,15 @@ class DocsReminderReceiver : BroadcastReceiver() {
         if (intent.action != DocsReminder.ACTION) return
         DocsReminder.fire(ctx)
         DocsReminder.schedule(ctx)
+        // Telegram-сводка и проверка обновлений — в фоне, до 25 секунд.
+        val pending = goAsync()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                kotlinx.coroutines.withTimeout(25_000) { DailyDigest.run(ctx.applicationContext) }
+            } catch (_: Throwable) {
+            } finally {
+                pending.finish()
+            }
+        }
     }
 }

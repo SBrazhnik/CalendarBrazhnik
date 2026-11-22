@@ -130,6 +130,7 @@ fun HealthTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = { Text("Здоровье", style = MaterialTheme.typography.headlineSmall) },
                 actions = {

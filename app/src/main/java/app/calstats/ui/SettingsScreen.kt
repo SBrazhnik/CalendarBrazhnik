@@ -104,10 +104,10 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
             Section("Оформление") {
                 app.calstats.ThemeMode.entries.forEach { t ->
                     val sw = when (t) {
-                        app.calstats.ThemeMode.SYSTEM -> listOf(0xFFF4F1EA, 0xFF1F3A2B, 0xFF0F1F17, 0xFFD4A960)
-                        app.calstats.ThemeMode.LIGHT -> listOf(0xFFF4F1EA, 0xFFFBF9F4, 0xFF1F3A2B, 0xFFC27B44)
-                        app.calstats.ThemeMode.DARK -> listOf(0xFF141615, 0xFF2A2D2B, 0xFF9DBFA6, 0xFFC9A46A)
-                        app.calstats.ThemeMode.FOREST -> listOf(0xFF0F1F17, 0xFF1F3528, 0xFFD4A960, 0xFFE8DCC2)
+                        app.calstats.ThemeMode.SYSTEM -> listOf(0xFFF3F2F7, 0xFF121721, 0xFF0C1913, 0xFFD4A960)
+                        app.calstats.ThemeMode.LIGHT -> listOf(0xFFF3F2F7, 0xFFFFFFFF, 0xFF121721, 0xFF7C5CE6)
+                        app.calstats.ThemeMode.DARK -> listOf(0xFF121721, 0xFF1D222A, 0xFFC9B8FF, 0xFF3F3561)
+                        app.calstats.ThemeMode.FOREST -> listOf(0xFF0C1913, 0xFF172A20, 0xFFD4A960, 0xFFEDE6D6)
                     }
                     val selected = vm.themeMode == t
                     Row(

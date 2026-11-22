@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Установка обновлений приложения, скачанных из GitHub Releases -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Health Connect: только чтение данных Samsung Health -->
     <uses-permission android:name="android.permission.health.READ_STEPS" />
@@ -73,6 +75,16 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/tasks_widget_info" />
         </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Пояснение, зачем нужны данные о здоровье (Health Connect требует такой экран) -->
         <activity

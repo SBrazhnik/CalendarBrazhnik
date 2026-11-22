@@ -61,6 +61,7 @@ enum class Tab(val title: String, val description: String) {
     HABITS("Привычки", "Ежедневные отметки, серии, учёт алкоголя"),
     HEALTH("Здоровье", "Питание, вода, вес, шаги и сон из Samsung Health"),
     DOCS("Документы", "Паспорта, права, полисы, гарантии, подписки и их сроки"),
+    ACCOUNTS("Подключения", "Samsung Health, Google, Яндекс, Telegram и другие учётные записи"),
     MONEY("Расходы", "Общие чеки и кто кому должен"),
     ANALYSIS("Анализ", "Дни и часы по направлениям"),
     WISHES("Желания", "Списки желаний и подарков"),
@@ -88,6 +89,7 @@ sealed interface Screen {
         val presetTitle: String? = null,
     ) : Screen
     data object Colors : Screen
+    data object Profile : Screen
     data class DocEdit(val id: String?) : Screen
     data class IssueDetail(val id: String) : Screen
     data object People : Screen
@@ -101,10 +103,12 @@ sealed interface Screen {
 }
 
 /** Тема оформления. */
+enum class TileSize(val title: String) { SMALL("Маленькая"), MEDIUM("Средняя"), LARGE("Большая") }
+
 enum class ThemeMode(val title: String, val description: String) {
-    SYSTEM("Как в системе", "Днём «Лён», ночью «Лес»"),
-    LIGHT("Лён", "Светлая: льняной фон, глубокий зелёный"),
-    DARK("Графит", "Тёмная: графит, шалфей и латунь"),
+    SYSTEM("Как в системе", "Днём светлая, ночью «Лес»"),
+    LIGHT("Светлая", "Светло-серый фон, белые карточки, чернильный и лавандовый"),
+    DARK("Тёмная", "Ночной синий, графитовые карточки, лавандовый акцент"),
     FOREST("Лес", "Тёмно-зелёная: лес, латунь и пергамент"),
 }
 
@@ -211,20 +215,141 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun isEnabled(t: Tab) = t == Tab.HOME || t !in disabledModules
 
-    /** Модули, у которых на Главной большая карточка (остальные — средние плитки по две в ряд). */
-    var largeCards by mutableStateOf(loadTabs("cards_large", listOf(Tab.CALENDAR, Tab.TASKS, Tab.FINANCE)).toSet())
+    // ---------- Гибкая Главная ----------
+    /** Размер плитки модуля на Главной. */
+    var tileSizes by mutableStateOf(
+        (uiPrefs.getString("tile_sizes", null)?.split(",")?.mapNotNull { e ->
+            val (k, v) = e.split(":").takeIf { it.size == 2 } ?: return@mapNotNull null
+            val t = Tab.entries.firstOrNull { it.name == k } ?: return@mapNotNull null
+            val z = TileSize.entries.firstOrNull { it.name == v } ?: return@mapNotNull null
+            t to z
+        }?.toMap()) ?: run {
+            // Перенос из прошлой версии: большие карточки остаются большими.
+            val large = loadTabs("cards_large", listOf(Tab.CALENDAR, Tab.TASKS, Tab.FINANCE))
+            Tab.modules.associateWith { if (it in large) TileSize.LARGE else TileSize.MEDIUM } + (Tab.ACCOUNTS to TileSize.SMALL)
+        },
+    )
         private set
+    fun tileSize(t: Tab): TileSize = tileSizes[t] ?: TileSize.MEDIUM
+    fun setTileSize(t: Tab, z: TileSize) {
+        tileSizes = tileSizes + (t to z)
+        uiPrefs.edit().putString("tile_sizes", tileSizes.entries.joinToString(",") { "${it.key.name}:${it.value.name}" }).apply()
+    }
 
-    fun setCardLarge(t: Tab, large: Boolean) {
-        largeCards = if (large) largeCards + t else largeCards - t
-        uiPrefs.edit().putString("cards_large", largeCards.joinToString(",") { it.name }).apply()
+    /** Порядок плиток на Главной (не зависит от порядка в меню). */
+    var homeOrder by mutableStateOf(loadTabs("home_order", emptyList()).filter { it.isModule }.let { it + Tab.modules.filter { t -> t !in it } })
+        private set
+    /** Модули, скрытые только с Главной (в меню остаются). */
+    var homeHidden by mutableStateOf(loadTabs("home_hidden", emptyList()).toSet())
+        private set
+    val homeTiles: List<Tab> get() = homeOrder.filter { isEnabled(it) && it !in homeHidden }
+
+    fun moveTile(t: Tab, delta: Int) {
+        val vis = homeTiles
+        val i = vis.indexOf(t)
+        val j = i + delta
+        if (i < 0 || j !in vis.indices) return
+        val other = vis[j]
+        val list = homeOrder.toMutableList()
+        val a = list.indexOf(t)
+        val b = list.indexOf(other)
+        list[a] = other
+        list[b] = t
+        homeOrder = list
+        uiPrefs.edit().putString("home_order", list.joinToString(",") { it.name }).apply()
+    }
+
+    fun setTileHidden(t: Tab, hidden: Boolean) {
+        homeHidden = if (hidden) homeHidden + t else homeHidden - t
+        uiPrefs.edit().putString("home_hidden", homeHidden.joinToString(",") { it.name }).apply()
+    }
+
+    var editHome by mutableStateOf(false)
+
+    // ---------- Профиль и обновления ----------
+    var avatarVersion by mutableStateOf(0)
+    var autoUpdate by mutableStateOf(uiPrefs.getBoolean("auto_update", true))
+        private set
+    fun changeAutoUpdate(on: Boolean) {
+        autoUpdate = on
+        uiPrefs.edit().putBoolean("auto_update", on).apply()
+    }
+    var update by mutableStateOf<Updater.Release?>(null)
+        private set
+    var updateDismissed by mutableStateOf(false)
+    var updateProgress by mutableStateOf<Int?>(null)
+        private set
+    var updateChecking by mutableStateOf(false)
+        private set
+    private var lastUpdateCheck = 0L
+
+    /** Проверить новую версию (автоматически — не чаще раза в 6 часов). */
+    fun checkUpdate(manual: Boolean = false) {
+        if (!manual && (!autoUpdate || System.currentTimeMillis() - lastUpdateCheck < 6 * 3600_000L)) return
+        lastUpdateCheck = System.currentTimeMillis()
+        updateChecking = true
+        viewModelScope.launch {
+            val r = runCatching { Updater.check(getApplication()) }
+            updateChecking = false
+            r.onSuccess {
+                update = it
+                if (it != null) updateDismissed = false
+                if (manual) message = if (it == null) "У вас последняя версия" else "Есть новая версия ${it.version}"
+            }.onFailure { if (manual) message = "Не удалось проверить обновления" }
+        }
+    }
+
+    fun installUpdate(ctx: android.content.Context) {
+        val r = update ?: return
+        if (updateProgress != null) return
+        updateProgress = 0
+        viewModelScope.launch {
+            runCatching { Updater.download(getApplication(), r) { updateProgress = it } }
+                .onSuccess { f -> updateProgress = null; if (!Updater.install(ctx, f)) message = "Разрешите установку и нажмите «Установить» ещё раз" }
+                .onFailure { updateProgress = null; message = "Не удалось скачать обновление" }
+        }
+    }
+
+    // ---------- Telegram ----------
+    val telegram = TelegramBot(app)
+    var telegramState by mutableStateOf(telegram.state())
+        private set
+    fun refreshTelegram() { telegramState = telegram.state() }
+
+    /** Забрать сообщения, присланные боту: «задача …», «заметка …», «трата 350 кофе», просто текст — в заметки. */
+    fun pullTelegram() {
+        if (!telegramState.connected || !telegramState.inbox) return
+        viewModelScope.launch {
+            val msgs = runCatching { telegram.pull() }.getOrDefault(emptyList())
+            if (msgs.isEmpty()) return@launch
+            var n = 0
+            msgs.forEach { m ->
+                val cmd = TelegramBot.parseCommand(m)
+                when (cmd.kind) {
+                    TelegramBot.Kind.TASK -> { incoming = SharedText(cmd.text, null, "Telegram"); saveIncomingAsTask(false) }
+                    TelegramBot.Kind.NOTE -> { incoming = SharedText(cmd.text, null, "Telegram"); saveIncomingAsNote(false) }
+                    TelegramBot.Kind.EXPENSE -> updateWork { w ->
+                        val ww = app.calstats.work.FinanceOps.ensureDefaults(w)
+                        val acc = ww.accounts.firstOrNull()?.id
+                        val cat = ww.finCategories.firstOrNull { it.type == app.calstats.work.TxType.EXPENSE }?.id
+                        if (acc == null) return@updateWork ww
+                        app.calstats.work.FinanceOps.upsertTx(ww, app.calstats.work.Transaction(
+                            id = app.calstats.work.newId(), type = app.calstats.work.TxType.EXPENSE, amount = cmd.amount,
+                            accountId = acc, categoryId = cat, date = today.toString(), note = cmd.text,
+                        ))
+                    }
+                }
+                n++
+            }
+            incoming = null
+            message = "Из Telegram добавлено: $n"
+        }
     }
 
     private fun saveModules() {
         uiPrefs.edit()
             .putString("modules_order", moduleOrder.joinToString(",") { it.name })
             .putString("modules_disabled", disabledModules.joinToString(",") { it.name })
-            .putString("modules_unpinned", unpinnedModules.joinToString(",") { it.name })
             .apply()
     }
 
@@ -388,6 +513,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onResume() {
         refreshHealth()
+        checkUpdate()
+        pullTelegram()
         drinks = sobrietyStore.load()
         work = workStore.load()
         DrinkReminder.schedule(getApplication())
@@ -603,11 +730,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Пришло из «Поделиться» — ждёт выбора, куда сохранить. */
     var incoming by mutableStateOf<SharedText?>(null)
 
-    fun saveIncomingAsNote() {
+    fun saveIncomingAsNote(navigate: Boolean = true) {
         val sh = incoming ?: return
         incoming = null
         val note = NoteImport.fromSharedText(sh.text, sh.subject, sh.source)
         updateWork { WorkOps.upsertNote(it, note) }
+        if (!navigate) return
         tab = Tab.NOTES
         push(Screen.NoteEdit(note.id))
     }
@@ -624,7 +752,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         push(Screen.WishListDetail(listId))
     }
 
-    fun saveIncomingAsTask() {
+    fun saveIncomingAsTask(navigate: Boolean = true) {
         val sh = incoming ?: return
         incoming = null
         var w = work
@@ -638,7 +766,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             w,
             Issue(newId(), project.id, 0, title, description = sh.text.trim(), assigneeId = ME),
         )
+        work = w2
         updateWork { w2 }
+        if (!navigate) return
         tab = Tab.TASKS
         push(Screen.IssueDetail(issue.id))
     }

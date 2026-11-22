@@ -166,6 +166,7 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = { Text("Финансы", style = MaterialTheme.typography.headlineSmall) },
                 actions = {

@@ -73,6 +73,7 @@ fun moduleColor(t: Tab): Color = when (t) {
     Tab.HABITS -> Color(0xFFB5653A)
     Tab.HEALTH -> Color(0xFF6E8B3D)
     Tab.DOCS -> Color(0xFF5A6B7D)
+    Tab.ACCOUNTS -> Color(0xFF7C5CE6)
     Tab.MONEY -> Color(0xFF8C5A3C)
     Tab.ANALYSIS -> Color(0xFF6C4F7A)
     Tab.WISHES -> Color(0xFFB0656B)
@@ -91,6 +92,7 @@ fun ModuleIcon(t: Tab, selected: Boolean = false, size: Dp = 24.dp, tint: Color?
         Tab.HABITS -> Icon(painterResource(R.drawable.ic_repeat), null, m, tint = c)
         Tab.HEALTH -> Icon(painterResource(R.drawable.ic_health), null, m, tint = c)
         Tab.DOCS -> Icon(painterResource(R.drawable.ic_docs), null, m, tint = c)
+        Tab.ACCOUNTS -> Icon(painterResource(R.drawable.ic_link), null, m, tint = c)
         Tab.MONEY -> Icon(painterResource(R.drawable.ic_group), null, m, tint = c)
         Tab.ANALYSIS -> Icon(painterResource(R.drawable.ic_tab_stats), null, m, tint = c)
         Tab.WISHES -> Icon(painterResource(R.drawable.ic_tab_gift), null, m, tint = c)
@@ -123,7 +125,6 @@ fun ModulesScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { pad ->
-        val pinnedCount = vm.enabledModules.count { it !in vm.unpinnedModules }
         LazyColumn(
             Modifier.padding(pad).fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
@@ -131,8 +132,8 @@ fun ModulesScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
         ) {
             item {
                 Text(
-                    "Включайте только нужные модули. Выключенный модуль скрывается с главной и из нижней панели — " +
-                        "его данные сохраняются. В нижней панели помещается 4 модуля, остальные открываются с главной.",
+                    "Включайте только нужные модули. Выключенный модуль скрывается из меню и с Главной — " +
+                        "его данные сохраняются. Стрелки меняют порядок в боковом меню.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -159,22 +160,12 @@ fun ModulesScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                         if (on) {
                             HorizontalDivider(Modifier.padding(vertical = 6.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                val pinned = t !in vm.unpinnedModules
-                                Checkbox(
-                                    checked = pinned,
-                                    enabled = pinned || pinnedCount < 4,
-                                    onCheckedChange = { vm.setModulePinned(t, it) },
-                                )
-                                Text(
-                                    if (pinned || pinnedCount < 4) "В нижней панели" else "В нижней панели (места нет)",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                val large = t in vm.largeCards
+                                Text("Плитка на Главной", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                val z = vm.tileSize(t)
                                 FilterChip(
-                                    selected = large,
-                                    onClick = { vm.setCardLarge(t, !large) },
-                                    label = { Text(if (large) "Большая" else "Средняя") },
+                                    selected = t !in vm.homeHidden,
+                                    onClick = { vm.setTileSize(t, app.calstats.TileSize.entries[(z.ordinal + 1) % 3]) },
+                                    label = { Text(z.title) },
                                 )
                                 IconButton(onClick = { vm.moveModule(t, -1) }, enabled = idx > 0) {
                                     Icon(Icons.Filled.KeyboardArrowUp, "Выше")

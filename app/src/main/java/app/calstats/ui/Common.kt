@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+
 package app.calstats.ui
 
 import android.app.DatePickerDialog
@@ -41,6 +43,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -50,70 +57,80 @@ import app.calstats.R
 import app.calstats.PeriodType
 import java.time.LocalDate
 
-/** Палитры тем: строгие «интерьерные» сочетания. */
-private val LinenScheme = lightColorScheme(
-    primary = Color(0xFF1F3A2B),
-    onPrimary = Color(0xFFF4F1EA),
-    primaryContainer = Color(0xFFDCE5DA),
-    onPrimaryContainer = Color(0xFF0F1F17),
+/*
+ * Палитры в стиле corpdance.ru: плоские карточки на ровном фоне, тонкие линии,
+ * выбранное — «пилюля» контрастного цвета (secondaryContainer). secondary = цвет карточки
+ * (верхние сводные блоки модулей выглядят как обычные карточки).
+ */
+private val LightScheme = lightColorScheme(
+    primary = Color(0xFF3F3561),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFEFEBFC),
+    onPrimaryContainer = Color(0xFF3F3561),
     secondary = Color(0xFFFFFFFF),
-    onSecondary = Color(0xFF1B1F1A),
-    secondaryContainer = Color(0xFFF1E2CF),
-    onSecondaryContainer = Color(0xFF3A2414),
-    tertiary = Color(0xFFC27B44),
-    tertiaryContainer = Color(0xFFF1E2CF),
-    onTertiaryContainer = Color(0xFF3A2414),
-    background = Color(0xFFF2F1ED),
-    onBackground = Color(0xFF1B1F1A),
-    surface = Color(0xFFF2F1ED),
-    onSurface = Color(0xFF1B1F1A),
-    onSurfaceVariant = Color(0xFF6B6A60),
-    surfaceVariant = Color(0xFFE6E0D3),
-    surfaceContainerHighest = Color(0xFFE6E3DC),
-    surfaceContainerHigh = Color(0xFFEDEBE5),
+    onSecondary = Color(0xFF121721),
+    secondaryContainer = Color(0xFF121721),
+    onSecondaryContainer = Color(0xFFFFFFFF),
+    tertiary = Color(0xFF7C5CE6),
+    tertiaryContainer = Color(0xFFEFEBFC),
+    onTertiaryContainer = Color(0xFF3F3561),
+    background = Color(0xFFF3F2F7),
+    onBackground = Color(0xFF121721),
+    surface = Color(0xFFF3F2F7),
+    onSurface = Color(0xFF121721),
+    onSurfaceVariant = Color(0xFF5E6472),
+    surfaceVariant = Color(0xFFEEECF4),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF8F7FB),
     surfaceContainer = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF8F7F4),
-    outline = Color(0xFFB8B0A0),
-    outlineVariant = Color(0xFFDDD6C8),
-    error = Color(0xFFB3261E),
+    surfaceContainerHigh = Color(0xFFEEECF4),
+    surfaceContainerHighest = Color(0xFFE6E4EE),
+    inverseSurface = Color(0xFF121721),
+    inverseOnSurface = Color(0xFFF1F2F5),
+    outline = Color(0xFFC9C6D3),
+    outlineVariant = Color(0xFFE3E1EA),
+    error = Color(0xFFC93D3D),
 )
 
-private val GraphiteScheme = darkColorScheme(
-    primary = Color(0xFF9DBFA6),
-    onPrimary = Color(0xFF10241A),
-    primaryContainer = Color(0xFF2F3A33),
-    onPrimaryContainer = Color(0xFFD5E6D9),
-    secondary = Color(0xFF1D1F1E),
-    onSecondary = Color(0xFFECE8E0),
-    secondaryContainer = Color(0xFF3A3122),
-    onSecondaryContainer = Color(0xFFF0DFC2),
-    tertiary = Color(0xFFC9A46A),
-    tertiaryContainer = Color(0xFF332C21),
-    onTertiaryContainer = Color(0xFFF0DFC2),
-    background = Color(0xFF0F1010),
-    onBackground = Color(0xFFECE8E0),
-    surface = Color(0xFF0F1010),
-    onSurface = Color(0xFFECE8E0),
-    onSurfaceVariant = Color(0xFFA29E95),
-    surfaceVariant = Color(0xFF2A2D2B),
-    surfaceContainerHighest = Color(0xFF303331),
-    surfaceContainerHigh = Color(0xFF2A2D2B),
-    surfaceContainer = Color(0xFF1D1F1E),
-    surfaceContainerLow = Color(0xFF171918),
-    outline = Color(0xFF5A5D58),
-    outlineVariant = Color(0xFF383B38),
-    error = Color(0xFFFF8A80),
+private val DarkScheme = darkColorScheme(
+    primary = Color(0xFFC9B8FF),
+    onPrimary = Color(0xFF121721),
+    primaryContainer = Color(0xFF3F3561),
+    onPrimaryContainer = Color(0xFFF1F2F5),
+    secondary = Color(0xFF1D222A),
+    onSecondary = Color(0xFFF1F2F5),
+    secondaryContainer = Color(0xFFF1F2F5),
+    onSecondaryContainer = Color(0xFF121721),
+    tertiary = Color(0xFFC9B8FF),
+    tertiaryContainer = Color(0xFF2E2A45),
+    onTertiaryContainer = Color(0xFFE6DEFF),
+    background = Color(0xFF121721),
+    onBackground = Color(0xFFF1F2F5),
+    surface = Color(0xFF121721),
+    onSurface = Color(0xFFF1F2F5),
+    onSurfaceVariant = Color(0xFFAAAEB6),
+    surfaceVariant = Color(0xFF262C36),
+    surfaceContainerLowest = Color(0xFF0B0F16),
+    surfaceContainerLow = Color(0xFF181D26),
+    surfaceContainer = Color(0xFF1D222A),
+    surfaceContainerHigh = Color(0xFF262C36),
+    surfaceContainerHighest = Color(0xFF2B303A),
+    inverseSurface = Color(0xFFF1F2F5),
+    inverseOnSurface = Color(0xFF121721),
+    outline = Color(0xFF4A505B),
+    outlineVariant = Color(0xFF2A2F37),
+    error = Color(0xFFFF8080),
 )
 
 private val ForestScheme = darkColorScheme(
     primary = Color(0xFFD4A960),
-    onPrimary = Color(0xFF2A1F0B),
+    onPrimary = Color(0xFF1B140A),
     primaryContainer = Color(0xFF2A4434),
     onPrimaryContainer = Color(0xFFEDE6D6),
     secondary = Color(0xFF172A20),
     onSecondary = Color(0xFFEDE6D6),
-    secondaryContainer = Color(0xFF2A4434),
-    onSecondaryContainer = Color(0xFFEDE6D6),
+    secondaryContainer = Color(0xFFEDE6D6),
+    onSecondaryContainer = Color(0xFF0C1913),
     tertiary = Color(0xFFE0954F),
     tertiaryContainer = Color(0xFF3A3524),
     onTertiaryContainer = Color(0xFFF3E4C8),
@@ -122,15 +139,28 @@ private val ForestScheme = darkColorScheme(
     surface = Color(0xFF0C1913),
     onSurface = Color(0xFFEDE6D6),
     onSurfaceVariant = Color(0xFFA9B3A4),
-    surfaceVariant = Color(0xFF243A2D),
-    surfaceContainerHighest = Color(0xFF26402F),
-    surfaceContainerHigh = Color(0xFF1F3528),
+    surfaceVariant = Color(0xFF223A2C),
+    surfaceContainerLowest = Color(0xFF07110C),
+    surfaceContainerLow = Color(0xFF12241A),
     surfaceContainer = Color(0xFF172A20),
-    surfaceContainerLow = Color(0xFF13241B),
+    surfaceContainerHigh = Color(0xFF1F3528),
+    surfaceContainerHighest = Color(0xFF26402F),
+    inverseSurface = Color(0xFFEDE6D6),
+    inverseOnSurface = Color(0xFF0C1913),
     outline = Color(0xFF4F6656),
-    outlineVariant = Color(0xFF2C4334),
+    outlineVariant = Color(0xFF243A2D),
     error = Color(0xFFFF8A80),
 )
+
+/** Шрифты corpdance: Golos Text — текст, Cormorant Unicase — заголовки и крупные цифры, Marck Script — рукописные подписи. */
+val Golos = FontFamily(
+    Font(R.font.golos_text, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.golos_text, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.golos_text, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+    Font(R.font.golos_text, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+)
+val DisplayFont = FontFamily(Font(R.font.cormorant_unicase_medium, FontWeight.Medium))
+val ScriptFont = FontFamily(Font(R.font.marck_script, FontWeight.Normal))
 
 /** Тёмная ли выбранная тема (для строки состояния и фона заметок). */
 @Composable
@@ -143,26 +173,39 @@ fun isDarkTheme(mode: app.calstats.ThemeMode): Boolean = when (mode) {
 @Composable
 fun AppTheme(mode: app.calstats.ThemeMode = app.calstats.ThemeMode.SYSTEM, content: @Composable () -> Unit) {
     val scheme = when (mode) {
-        app.calstats.ThemeMode.LIGHT -> LinenScheme
-        app.calstats.ThemeMode.DARK -> GraphiteScheme
+        app.calstats.ThemeMode.LIGHT -> LightScheme
+        app.calstats.ThemeMode.DARK -> DarkScheme
         app.calstats.ThemeMode.FOREST -> ForestScheme
-        app.calstats.ThemeMode.SYSTEM -> if (isSystemInDarkTheme()) ForestScheme else LinenScheme
+        app.calstats.ThemeMode.SYSTEM -> if (isSystemInDarkTheme()) ForestScheme else LightScheme
     }
     val shapes = Shapes(
         extraSmall = RoundedCornerShape(8.dp),
-        small = RoundedCornerShape(12.dp),
-        medium = RoundedCornerShape(26.dp),
+        small = RoundedCornerShape(10.dp),
+        medium = RoundedCornerShape(16.dp),
         large = RoundedCornerShape(28.dp),
         extraLarge = RoundedCornerShape(32.dp),
     )
     val base = Typography()
-    val typography = base.copy(
-        headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
-        headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp),
-        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        // Крупные цифры в карточках, как в Samsung Health
-        displaySmall = base.displaySmall.copy(fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 34.sp, letterSpacing = (-0.5).sp),
+    fun TextStyle.g(w: FontWeight? = null) = copy(fontFamily = Golos, fontWeight = w ?: fontWeight)
+    fun TextStyle.d(size: Int) = copy(fontFamily = DisplayFont, fontWeight = FontWeight.Medium, fontSize = size.sp, lineHeight = (size * 1.08f).sp, letterSpacing = 0.sp)
+    val typography = Typography(
+        displayLarge = base.displayLarge.d(52),
+        displayMedium = base.displayMedium.d(44),
+        // Крупные цифры в карточках (KPI) — как на corpdance
+        displaySmall = base.displaySmall.d(36),
+        headlineLarge = base.headlineLarge.d(36),
+        headlineMedium = base.headlineMedium.d(32),
+        // Заголовки экранов: «ГЛАВНАЯ», «ЗАДАЧИ»…
+        headlineSmall = base.headlineSmall.d(30),
+        titleLarge = base.titleLarge.g(FontWeight.SemiBold),
+        titleMedium = base.titleMedium.g(FontWeight.SemiBold),
+        titleSmall = base.titleSmall.g(FontWeight.SemiBold),
+        bodyLarge = base.bodyLarge.g(),
+        bodyMedium = base.bodyMedium.g(),
+        bodySmall = base.bodySmall.g(),
+        labelLarge = base.labelLarge.g(FontWeight.SemiBold),
+        labelMedium = base.labelMedium.g(FontWeight.Medium),
+        labelSmall = base.labelSmall.g(FontWeight.Medium),
     )
     MaterialTheme(colorScheme = scheme, shapes = shapes, typography = typography, content = content)
 }

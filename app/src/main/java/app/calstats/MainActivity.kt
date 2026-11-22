@@ -139,5 +139,6 @@ fun App(vm: MainViewModel) {
         is Screen.NoteEdit -> app.calstats.ui.NoteEditScreen(vm, screen.id, snackbar)
         is Screen.WishListDetail -> app.calstats.ui.WishListScreen(vm, screen.id, snackbar)
         is Screen.DocEdit -> app.calstats.ui.DocEditScreen(vm, screen.id, snackbar)
+        Screen.Profile -> app.calstats.ui.ProfileScreen(vm, snackbar)
     }
 }

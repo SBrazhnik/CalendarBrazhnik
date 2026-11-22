@@ -62,6 +62,14 @@ import app.calstats.Screen
 import app.calstats.Sobriety
 import app.calstats.Stats
 import app.calstats.Tab
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.unit.sp
+import app.calstats.TileSize
 import app.calstats.work.ME
 import app.calstats.work.SplitMath
 import app.calstats.work.Status
@@ -88,20 +96,16 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
+                navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = {
-                    Column {
-                        Text(greeting + (name?.let { ", $it" } ?: ""), style = MaterialTheme.typography.headlineSmall)
-                        Text(
-                            Fmt.dayTitle(vm.today, vm.today),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
+                title = { Text(if (vm.editHome) "Настройка" else "Зелёный ритм", style = MaterialTheme.typography.titleLarge) },
                 actions = {
-                    IconButton(onClick = { vm.push(Screen.Modules) }) { Icon(painterResource(R.drawable.ic_apps), "Модули") }
-                    IconButton(onClick = { vm.push(Screen.Settings) }) { Icon(Icons.Filled.Settings, "Настройки") }
+                    if (vm.editHome) {
+                        TextButton(onClick = { vm.editHome = false }) { Text("Готово", fontWeight = FontWeight.Bold) }
+                    } else {
+                        IconButton(onClick = { vm.editHome = true }) { Icon(Icons.Filled.Edit, "Настроить Главную") }
+                        Box(Modifier.padding(end = 8.dp).clip(CircleShape).clickable { vm.push(Screen.Profile) }) { Avatar(vm, 34.dp) }
+                    }
                 },
             )
         },
@@ -109,71 +113,152 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     ) { pad ->
         LazyColumn(
             Modifier.padding(pad).fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { QuickActions(vm) { txSheet = it } }
-            // Большие карточки — во всю ширину, средние — по две в ряд (как в Samsung Health).
-            dashboardRows(vm.enabledModules, vm.largeCards).forEach { row ->
-                item(key = row.joinToString("+") { it.name }) {
-                    if (row.size == 1 && row[0] in vm.largeCards) {
-                        LargeCard(vm, row[0])
+            // Заголовок в стиле corpdance: крупное «ГЛАВНАЯ» и рукописная дата.
+            item {
+                Column(Modifier.padding(bottom = 2.dp)) {
+                    Text("Главная", style = MaterialTheme.typography.displaySmall)
+                    Text(
+                        "✦ " + Fmt.dayTitle(vm.today, vm.today).replaceFirstChar { it.lowercase() } + " · " + greeting.lowercase() + (name?.let { ", $it" } ?: ""),
+                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = ScriptFont, fontWeight = FontWeight.Normal),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (!vm.editHome) item { QuickActions(vm) { txSheet = it } }
+            if (vm.editHome) {
+                item {
+                    Text(
+                        "Стрелками меняйте порядок, кнопкой размера — маленькая, средняя или большая плитка, глазом — скрыть с Главной.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            tileRows(vm.homeTiles.map { it to vm.tileSize(it) }).forEach { row ->
+                item(key = row.joinToString("+") { it.first.name }) {
+                    if (!vm.editHome && row.size == 1 && row[0].second == TileSize.LARGE && row[0].first != Tab.ACCOUNTS) {
+                        LargeCard(vm, row[0].first)
                     } else {
                         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            row.forEach { t -> MediumTile(vm, t, Modifier.weight(1f).fillMaxHeight()) }
-                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                            row.forEach { (t, z) ->
+                                val w = units(z).toFloat()
+                                if (z == TileSize.SMALL) SmallTile(vm, t, Modifier.weight(w).fillMaxHeight())
+                                else MediumTile(vm, t, Modifier.weight(w).fillMaxHeight())
+                            }
+                            val free = 6 - row.sumOf { units(it.second) }
+                            if (free > 0) Spacer(Modifier.weight(free.toFloat()))
                         }
                     }
                 }
             }
-            item {
-                Text(
-                    "Размер карточки: удерживайте её или настройте в «Модулях»",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-            }
-            item {
-                Card(
-                    onClick = { vm.push(Screen.Settings) },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Settings, null)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("Общие настройки", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "Синхронизация, резервная копия, уведомления",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+            if (vm.editHome) {
+                val hidden = vm.homeOrder.filter { vm.isEnabled(it) && it in vm.homeHidden }
+                if (hidden.isNotEmpty()) {
+                    item { Text("Скрыты с Главной", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
+                    hidden.forEach { t ->
+                        item(key = "h" + t.name) {
+                            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    CardIcon(t)
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(t.title, Modifier.weight(1f))
+                                    TextButton(onClick = { vm.setTileHidden(t, false) }) { Text("Показать") }
+                                }
+                            }
                         }
                     }
+                }
+                item {
+                    OutlinedButton(onClick = { vm.push(Screen.Modules) }, modifier = Modifier.fillMaxWidth()) { Text("Включить или выключить модули") }
+                }
+            } else {
+                item {
+                    Text(
+                        "Удерживайте плитку, чтобы настроить Главную",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
                 }
             }
         }
     }
 }
 
-/** Раскладка Главной: большие карточки по одной, средние — парами (одинокая средняя подтягивает следующую). */
-fun dashboardRows(order: List<Tab>, large: Set<Tab>): List<List<Tab>> {
-    val rows = ArrayList<List<Tab>>()
-    val used = HashSet<Tab>()
-    order.forEachIndexed { i, t ->
-        if (t in used) return@forEachIndexed
-        used += t
-        if (t in large) {
-            rows += listOf(t)
-        } else {
-            val pair = order.drop(i + 1).firstOrNull { it !in used && it !in large }
-            if (pair != null) used += pair
-            rows += listOfNotNull(t, pair)
+/** Ширина плитки в шестых долях ряда. */
+private fun units(z: TileSize) = when (z) { TileSize.SMALL -> 2; TileSize.MEDIUM -> 3; TileSize.LARGE -> 6 }
+
+/** Раскладка плиток по рядам по 6 долей: большая — весь ряд, средняя — половина, маленькая — треть. Порядок сохраняется. */
+fun tileRows(items: List<Pair<Tab, TileSize>>): List<List<Pair<Tab, TileSize>>> {
+    val rows = ArrayList<List<Pair<Tab, TileSize>>>()
+    var cur = ArrayList<Pair<Tab, TileSize>>()
+    var used = 0
+    items.forEach { it ->
+        val u = units(it.second)
+        if (used + u > 6) {
+            rows += cur
+            cur = ArrayList()
+            used = 0
+        }
+        cur += it
+        used += u
+    }
+    if (cur.isNotEmpty()) rows += cur
+    return rows
+}
+
+/** Панель управления плиткой в режиме настройки. */
+@Composable
+private fun TileControls(vm: MainViewModel, t: Tab) {
+    val vis = vm.homeTiles
+    val i = vis.indexOf(t)
+    val z = vm.tileSize(t)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { vm.moveTile(t, -1) }, enabled = i > 0, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Раньше", Modifier.size(20.dp))
+        }
+        Box(
+            Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .clickable { vm.setTileSize(t, TileSize.entries[(z.ordinal + 1) % TileSize.entries.size]) }
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        ) { Text(when (z) { TileSize.SMALL -> "S"; TileSize.MEDIUM -> "M"; TileSize.LARGE -> "L" }, style = MaterialTheme.typography.labelLarge) }
+        IconButton(onClick = { vm.setTileHidden(t, true) }, modifier = Modifier.size(32.dp)) {
+            Icon(painterResource(R.drawable.ic_visibility_off), "Скрыть", Modifier.size(18.dp))
+        }
+        IconButton(onClick = { vm.moveTile(t, 1) }, enabled = i in 0 until vis.lastIndex, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Позже", Modifier.size(20.dp))
         }
     }
-    return rows
+}
+
+/** Маленькая плитка: значок, крупное число, подпись. */
+@Composable
+private fun SmallTile(vm: MainViewModel, t: Tab, modifier: Modifier) {
+    val info = tileInfo(vm, t)
+    FlatCard(vm, t, modifier, onClick = { vm.tab = t }) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CardIcon(t, 16.dp)
+                Spacer(Modifier.width(6.dp))
+                Text(t.title, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.weight(1f))
+            Text(
+                info.value,
+                style = MaterialTheme.typography.displaySmall.copy(fontSize = 26.sp, lineHeight = 28.sp),
+                color = if (info.alert) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(info.unit, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (vm.editHome) TileControls(vm, t)
+        }
+    }
 }
 
 /** Плоская карточка: без тени и рамки, нажатие — открыть, удержание — сменить размер. */
@@ -181,12 +266,8 @@ fun dashboardRows(order: List<Tab>, large: Set<Tab>): List<List<Tab>> {
 private fun FlatCard(vm: MainViewModel, t: Tab, modifier: Modifier = Modifier, onClick: () -> Unit, content: @Composable () -> Unit) {
     Card(
         modifier = modifier.clip(MaterialTheme.shapes.medium).combinedClickable(
-            onClick = onClick,
-            onLongClick = {
-                val large = t !in vm.largeCards
-                vm.setCardLarge(t, large)
-                vm.message = "«${t.title}»: " + if (large) "большая карточка" else "средняя карточка"
-            },
+            onClick = { if (!vm.editHome) onClick() },
+            onLongClick = { vm.editHome = true },
         ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) { content() }
@@ -227,6 +308,7 @@ private fun LargeCard(vm: MainViewModel, t: Tab) {
         Tab.ANALYSIS -> AnalysisSummary(vm)
         Tab.WISHES -> WishesSummary(vm)
         Tab.NOTES -> NotesSummary(vm)
+        Tab.ACCOUNTS -> MediumTile(vm, t, Modifier.fillMaxWidth())
         Tab.HOME -> {}
     }
 }
@@ -307,6 +389,10 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
             val last = w.notes.filter { !it.archived && !it.isEmpty }.maxByOrNull { it.updated }
             TileInfo("${w.notes.count { !it.archived }}", "заметок", last?.let { it.title.ifBlank { it.asText().lineSequence().firstOrNull().orEmpty() } } ?: "пока пусто")
         }
+        Tab.ACCOUNTS -> {
+            val n = listOf(vm.healthGranted > 0, vm.calendars.any { it.accountType == "com.google" }, vm.telegramState.connected).count { it }
+            TileInfo("$n", "подключено", "Samsung Health, Google, Telegram")
+        }
         Tab.HOME -> TileInfo("", "", "")
     }
 }
@@ -341,6 +427,7 @@ private fun MediumTile(vm: MainViewModel, t: Tab, modifier: Modifier) {
             }
             Spacer(Modifier.height(8.dp))
             Text(info.caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (vm.editHome) TileControls(vm, t)
         }
     }
 }
