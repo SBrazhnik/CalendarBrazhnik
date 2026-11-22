@@ -331,7 +331,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     TelegramBot.Kind.EXPENSE -> updateWork { w ->
                         val ww = app.calstats.work.FinanceOps.ensureDefaults(w)
                         val acc = ww.accounts.firstOrNull()?.id
-                        val cat = ww.finCategories.firstOrNull { it.type == app.calstats.work.TxType.EXPENSE }?.id
+                        val cat = ww.finCategories.firstOrNull { !it.income && !it.archived }?.id
                         if (acc == null) return@updateWork ww
                         app.calstats.work.FinanceOps.upsertTx(ww, app.calstats.work.Transaction(
                             id = app.calstats.work.newId(), type = app.calstats.work.TxType.EXPENSE, amount = cmd.amount,
