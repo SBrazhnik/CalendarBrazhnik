@@ -62,6 +62,19 @@ import app.calstats.Screen
 import app.calstats.Sobriety
 import app.calstats.Stats
 import app.calstats.Tab
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -92,6 +105,8 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var txSheet by remember { mutableStateOf<app.calstats.work.Transaction?>(null) }
     txSheet?.let { t -> TxSheet(vm, t) { txSheet = null } }
 
+    val drag = remember { TileDrag() }
+    CompositionLocalProvider(LocalTileDrag provides drag) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -131,7 +146,7 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             if (vm.editHome) {
                 item {
                     Text(
-                        "Стрелками меняйте порядок, кнопкой размера — маленькая, средняя или большая плитка, глазом — скрыть с Главной.",
+                        "Зажмите плитку и перетащите на новое место. S / M / L — размер, глаз — скрыть с Главной.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -139,10 +154,11 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             }
             tileRows(vm.homeTiles.map { it to vm.tileSize(it) }).forEach { row ->
                 item(key = row.joinToString("+") { it.first.name }) {
+                    val lifted = row.any { it.first == drag.dragging }
                     if (!vm.editHome && row.size == 1 && row[0].second == TileSize.LARGE && row[0].first != Tab.ACCOUNTS) {
-                        LargeCard(vm, row[0].first)
+                        Box(Modifier.zIndex(if (lifted) 1f else 0f).tileDrag(vm, row[0].first)) { LargeCard(vm, row[0].first) }
                     } else {
-                        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(Modifier.zIndex(if (lifted) 1f else 0f).fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             row.forEach { (t, z) ->
                                 val w = units(z).toFloat()
                                 if (z == TileSize.SMALL) SmallTile(vm, t, Modifier.weight(w).fillMaxHeight())
@@ -177,7 +193,7 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             } else {
                 item {
                     Text(
-                        "Удерживайте плитку, чтобы настроить Главную",
+                        "Зажмите плитку и перетащите, чтобы поменять местами",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -187,6 +203,68 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             }
         }
     }
+    }
+}
+
+/** Состояние перетаскивания плиток на Главной. */
+class TileDrag {
+    var dragging by mutableStateOf<Tab?>(null)
+    var offset by mutableStateOf(Offset.Zero)
+    var target by mutableStateOf<Tab?>(null)
+    var start: Rect = Rect.Zero
+    val bounds = HashMap<Tab, Rect>()
+    fun reset() {
+        dragging = null
+        target = null
+        offset = Offset.Zero
+    }
+}
+
+val LocalTileDrag = staticCompositionLocalOf { TileDrag() }
+
+/** Зажать плитку и перетащить на место другой. */
+@Composable
+private fun Modifier.tileDrag(vm: MainViewModel, t: Tab): Modifier {
+    val d = LocalTileDrag.current
+    val haptic = LocalHapticFeedback.current
+    val lifted = d.dragging == t
+    val ring = MaterialTheme.colorScheme.primary
+    return this
+        .onGloballyPositioned { if (d.dragging != t) d.bounds[t] = it.boundsInRoot() }
+        .zIndex(if (lifted) 2f else 0f)
+        .graphicsLayer {
+            if (lifted) {
+                translationX = d.offset.x
+                translationY = d.offset.y
+                scaleX = 1.04f
+                scaleY = 1.04f
+                shadowElevation = 16f
+                alpha = 0.95f
+            }
+        }
+        .then(if (d.target == t) Modifier.border(2.dp, ring, MaterialTheme.shapes.medium) else Modifier)
+        .pointerInput(t) {
+            detectDragGesturesAfterLongPress(
+                onDragStart = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    vm.editHome = true
+                    d.start = d.bounds[t] ?: Rect.Zero
+                    d.offset = Offset.Zero
+                    d.dragging = t
+                },
+                onDrag = { change, amount ->
+                    change.consume()
+                    d.offset += amount
+                    val c = d.start.center + d.offset
+                    d.target = d.bounds.entries.firstOrNull { it.key != t && it.key in vm.homeTiles && it.value.contains(c) }?.key
+                },
+                onDragEnd = {
+                    d.target?.let { vm.moveTileTo(t, it) }
+                    d.reset()
+                },
+                onDragCancel = { d.reset() },
+            )
+        }
 }
 
 /** Ширина плитки в шестых долях ряда. */
@@ -265,10 +343,7 @@ private fun SmallTile(vm: MainViewModel, t: Tab, modifier: Modifier) {
 @Composable
 private fun FlatCard(vm: MainViewModel, t: Tab, modifier: Modifier = Modifier, onClick: () -> Unit, content: @Composable () -> Unit) {
     Card(
-        modifier = modifier.clip(MaterialTheme.shapes.medium).combinedClickable(
-            onClick = { if (!vm.editHome) onClick() },
-            onLongClick = { vm.editHome = true },
-        ),
+        modifier = modifier.tileDrag(vm, t).clip(MaterialTheme.shapes.medium).clickable { if (!vm.editHome) onClick() },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) { content() }
 }
@@ -308,7 +383,7 @@ private fun LargeCard(vm: MainViewModel, t: Tab) {
         Tab.ANALYSIS -> AnalysisSummary(vm)
         Tab.WISHES -> WishesSummary(vm)
         Tab.NOTES -> NotesSummary(vm)
-        Tab.ACCOUNTS -> MediumTile(vm, t, Modifier.fillMaxWidth())
+        Tab.ACCOUNTS, Tab.GUIDE -> MediumTile(vm, t, Modifier.fillMaxWidth())
         Tab.HOME -> {}
     }
 }
@@ -393,6 +468,7 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
             val n = listOf(vm.healthGranted > 0, vm.calendars.any { it.accountType == "com.google" }, vm.telegramState.connected).count { it }
             TileInfo("$n", "подключено", "Samsung Health, Google, Telegram")
         }
+        Tab.GUIDE -> TileInfo("${GUIDES.size}", "инструкций", "Как пользоваться модулями")
         Tab.HOME -> TileInfo("", "", "")
     }
 }

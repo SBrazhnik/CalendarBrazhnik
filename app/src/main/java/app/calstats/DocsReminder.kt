@@ -66,6 +66,8 @@ object DocsReminder {
     }
 
     fun fire(ctx: Context) {
+        // Если включена утренняя сводка — сроки документов уже в ней.
+        if (Notify.Settings(ctx).morning) return
         val lines = lines(ctx, LocalDate.now())
         if (lines.isEmpty() || !DrinkReminder.canNotify(ctx)) return
         if (Build.VERSION.SDK_INT >= 26) {

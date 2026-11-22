@@ -97,6 +97,7 @@ import app.calstats.work.FOOD_BASE
 import app.calstats.work.FoodItem
 import app.calstats.work.HealthMath
 import app.calstats.work.HealthOps
+import app.calstats.work.HealthStats
 import app.calstats.work.HealthProfile
 import app.calstats.work.Meal
 import app.calstats.work.Sex
@@ -109,7 +110,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.math.roundToInt
 
-private enum class HView(val title: String) { TODAY("Сегодня"), FOOD("Питание"), BODY("Активность"), PROFILE("Профиль") }
+private enum class HView(val title: String) { TODAY("День"), FOOD("Питание"), BODY("Активность"), STATS("Статистика"), PROFILE("Профиль") }
 
 private val PROT = Color(0xFF4A6A8A)
 private val FAT = Color(0xFFC9A46A)
@@ -153,9 +154,10 @@ fun HealthTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 HView.entries.forEach { v -> FilterChip(selected = view == v, onClick = { view = v }, label = { Text(v.title) }) }
             }
             when (view) {
-                HView.TODAY -> TodayView(vm, onFood = { foodFor = vm.today to it }, onProfile = { view = HView.PROFILE }, onWeight = { weightDialog = true })
+                HView.TODAY -> TodayView(vm, day, { day = it }, onFood = { foodFor = day to it }, onProfile = { view = HView.PROFILE }, onWeight = { weightDialog = true })
                 HView.FOOD -> FoodView(vm, day, { day = it }) { foodFor = day to it }
                 HView.BODY -> BodyView(vm) { weightDialog = true }
+                HView.STATS -> StatsView(vm) { d -> day = d; view = HView.TODAY }
                 HView.PROFILE -> ProfileView(vm)
             }
         }
@@ -168,21 +170,22 @@ fun HealthTab(vm: MainViewModel, snackbar: SnackbarHostState) {
 // ======================= СЕГОДНЯ =======================
 
 @Composable
-private fun TodayView(vm: MainViewModel, onFood: (Meal) -> Unit, onProfile: () -> Unit, onWeight: () -> Unit) {
+private fun TodayView(vm: MainViewModel, today: LocalDate, onDay: (LocalDate) -> Unit, onFood: (Meal) -> Unit, onProfile: () -> Unit, onWeight: () -> Unit) {
     val w = vm.work
-    val today = vm.today
     val p = w.healthProfile
     val norms = p?.let { HealthMath.norms(it, today) }
     val entries = w.foodLog.filter { it.date == today.toString() }
     val tot = HealthMath.totals(entries)
     val water = HealthOps.water(w, today)
-    val tips = Advice.tips(p, norms, tot, water, vm.health, LocalTime.now().hour)
+    val isToday = today == vm.today
+    val tips = if (isToday) Advice.tips(p, norms, tot, water, vm.health, LocalTime.now().hour) else emptyList()
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 32.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item { DayPicker(vm, today, onDay) }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary, contentColor = MaterialTheme.colorScheme.onSecondary)) {
                 Column(Modifier.fillMaxWidth().padding(20.dp)) {
@@ -197,7 +200,7 @@ private fun TodayView(vm: MainViewModel, onFood: (Meal) -> Unit, onProfile: () -
                         }
                         Spacer(Modifier.width(18.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Питание сегодня", style = MaterialTheme.typography.labelLarge)
+                            Text(if (isToday) "Питание сегодня" else "Питание за день", style = MaterialTheme.typography.labelLarge)
                             if (norms != null) {
                                 val left = norms.kcal - tot.kcal.roundToInt()
                                 Text(
@@ -232,8 +235,8 @@ private fun TodayView(vm: MainViewModel, onFood: (Meal) -> Unit, onProfile: () -
                 }
             }
         }
-        item { WaterCard(vm, norms?.waterMl ?: 2000) }
-        item { ActivityCard(vm, p, onWeight) }
+        item { WaterCard(vm, norms?.waterMl ?: 2000, today) }
+        item { ActivityCard(vm, p, today, onWeight) }
         if (tips.isNotEmpty()) {
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
@@ -262,8 +265,7 @@ private fun TodayView(vm: MainViewModel, onFood: (Meal) -> Unit, onProfile: () -
 }
 
 @Composable
-private fun WaterCard(vm: MainViewModel, goal: Int) {
-    val today = vm.today
+private fun WaterCard(vm: MainViewModel, goal: Int, today: LocalDate) {
     val ml = HealthOps.water(vm.work, today)
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -293,13 +295,27 @@ private fun WaterCard(vm: MainViewModel, goal: Int) {
 
 /** Шаги, сон, пульс, вес — из Samsung Health через Health Connect. */
 @Composable
-private fun ActivityCard(vm: MainViewModel, p: HealthProfile?, onWeight: () -> Unit) {
+private fun ActivityCard(vm: MainViewModel, p: HealthProfile?, day: LocalDate, onWeight: () -> Unit) {
     val h = vm.health
     if (vm.healthGranted == 0 || h == null) {
         ConnectCard(vm)
         return
     }
     val stepsGoal = p?.stepsGoal ?: 8000
+    val idx = h.days.indexOf(day)
+    if (idx < 0) {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Text(
+                "Шаги и сон за этот день не загружены — Samsung Health показывается за последние ${h.days.size} дней.",
+                Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        return
+    }
+    val steps = h.steps.getOrElse(idx) { 0 }
+    val sleep = h.sleepMin.getOrElse(idx) { 0 }
+    val isToday = day == vm.today
+    val dayWorkouts = h.workouts.filter { it.date == day }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -307,25 +323,27 @@ private fun ActivityCard(vm: MainViewModel, p: HealthProfile?, onWeight: () -> U
                 Text("Samsung Health", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Metric("🚶", "${h.todaySteps}", "шагов из $stepsGoal", Modifier.weight(1f))
-                Metric("😴", if (h.lastSleep > 0) Fmt.duration(h.lastSleep) else "—", "сон ночью", Modifier.weight(1f))
+                Metric("🚶", "$steps", "шагов из $stepsGoal", Modifier.weight(1f))
+                Metric("😴", if (sleep > 0) Fmt.duration(sleep) else "—", "сон ночью", Modifier.weight(1f))
             }
             LinearProgressIndicator(
-                progress = { (h.todaySteps.toFloat() / stepsGoal).coerceIn(0f, 1f) },
+                progress = { (steps.toFloat() / stepsGoal).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
                 color = CARB,
                 trackColor = CARB.copy(alpha = 0.18f),
                 drawStopIndicator = {},
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Metric("❤", (h.restingHr ?: h.avgHr)?.let { "$it" } ?: "—", if (h.restingHr != null) "пульс в покое" else "пульс сегодня", Modifier.weight(1f))
-                val kg = vm.work.weightLog.lastOrNull()?.kg ?: h.weightKg
+                if (isToday) Metric("❤", (h.restingHr ?: h.avgHr)?.let { "$it" } ?: "—", if (h.restingHr != null) "пульс в покое" else "пульс сегодня", Modifier.weight(1f))
+                else Metric("🏋", "${dayWorkouts.size}", "тренировок", Modifier.weight(1f))
+                val kg = vm.work.weightLog.lastOrNull { it.date <= day.toString() }?.kg ?: h.weightKg
                 Box(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onWeight)) {
                     Metric("⚖", kg?.let { "%.1f".format(it) } ?: "—", "вес, кг · записать", Modifier)
                 }
             }
-            val act = h.activeKcal.lastOrNull() ?: 0.0
-            if (act > 0) Text("🔥 Активные калории сегодня: ${act.roundToInt()} ккал", style = MaterialTheme.typography.bodySmall)
+            val act = h.activeKcal.getOrElse(idx) { 0.0 }
+            if (act > 0) Text("🔥 Активные калории: ${act.roundToInt()} ккал", style = MaterialTheme.typography.bodySmall)
+            dayWorkouts.forEach { Text("🏋 ${it.title} · ${Fmt.duration(it.minutes)}", style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
@@ -429,11 +447,7 @@ private fun FoodView(vm: MainViewModel, day: LocalDate, onDay: (LocalDate) -> Un
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { onDay(day.minusDays(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Раньше") }
-                Text(Fmt.dayTitle(day, vm.today), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-                IconButton(onClick = { onDay(day.plusDays(1)) }, enabled = day < vm.today) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Позже") }
-            }
+            DayPicker(vm, day, onDay)
         }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
@@ -696,13 +710,13 @@ private fun BodyView(vm: MainViewModel, onWeight: () -> Unit) {
         } else {
             item {
                 ChartCard("Шаги за 2 недели", "в среднем ${h.steps.dropLast(1).takeLast(7).let { if (it.isEmpty()) 0 else it.average().toLong() }} за неделю") {
-                    Bars(h.steps.map { it.toDouble() }, h.days, CARB, (p?.stepsGoal ?: 8000).toDouble())
+                    Bars(h.steps.takeLast(14).map { it.toDouble() }, h.days.takeLast(14), CARB, (p?.stepsGoal ?: 8000).toDouble())
                 }
             }
             item {
-                val sl = h.sleepMin.filter { it > 0 }
+                val sl = h.sleepMin.takeLast(14).filter { it > 0 }
                 ChartCard("Сон", if (sl.isEmpty()) "нет данных" else "в среднем ${Fmt.duration(sl.average().toLong())}") {
-                    Bars(h.sleepMin.map { it / 60.0 }, h.days, SLEEP, (p?.sleepGoalMin ?: 480) / 60.0)
+                    Bars(h.sleepMin.takeLast(14).map { it / 60.0 }, h.days.takeLast(14), SLEEP, (p?.sleepGoalMin ?: 480) / 60.0)
                 }
             }
             if (h.workouts.isNotEmpty()) {
@@ -835,6 +849,123 @@ private fun WeightDialog(vm: MainViewModel, onDismiss: () -> Unit) {
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
+}
+
+/** Выбор дня: стрелки и календарь. */
+@Composable
+private fun DayPicker(vm: MainViewModel, day: LocalDate, onDay: (LocalDate) -> Unit) {
+    val ctx = LocalContext.current
+    Column {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { onDay(day.minusDays(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Раньше") }
+        Box(
+            Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable {
+                pickDate(ctx, day) { if (!it.isAfter(vm.today)) onDay(it) }
+            }.padding(vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("📅 " + Fmt.dayTitle(day, vm.today), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        }
+        IconButton(onClick = { onDay(day.plusDays(1)) }, enabled = day < vm.today) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Позже") }
+    }
+    if (day != vm.today) {
+        TextButton(onClick = { onDay(vm.today) }, modifier = Modifier.fillMaxWidth()) { Text("Вернуться к сегодня") }
+    }
+}
+}
+
+// ======================= СТАТИСТИКА =======================
+
+@Composable
+private fun StatsView(vm: MainViewModel, onDay: (LocalDate) -> Unit) {
+    var days by rememberSaveable { mutableStateOf(7) }
+    val r = remember(vm.work, vm.health, days, vm.today) { HealthStats.compute(vm.work, vm.health, vm.today, days) }
+    val w = vm.work
+    val norms = w.healthProfile?.let { HealthMath.norms(it, vm.today) }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Column {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = days == 7, onClick = { days = 7 }, label = { Text("Неделя") })
+                FilterChip(selected = days == 30, onClick = { days = 30 }, label = { Text("Месяц") })
+            }
+            Text(
+                "Среднее за день и сравнение с прошлым${if (days == 7) "и 7 днями" else "и 30 днями"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            }
+        }
+        r.metrics.chunked(2).forEach { pair ->
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    pair.forEach { m -> StatTile(m, Modifier.weight(1f)) }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+        item {
+            // Калории по дням: нажмите на столбик — откроется этот день.
+            val ds = (days - 1 downTo 0).map { vm.today.minusDays(it.toLong()) }
+            val kc = ds.map { d -> w.foodLog.filter { it.date == d.toString() }.sumOf { it.kcal } }
+            ChartCard("Калории по дням", "нажмите на день, чтобы открыть его") {
+                Bars(kc, ds, PROT, (norms?.kcal ?: 2000).toDouble())
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ds.reversed().take(14).forEach { d ->
+                        FilterChip(selected = false, onClick = { onDay(d) }, label = { Text(Fmt.dateNoYear(d), fontSize = 11.sp) })
+                    }
+                }
+            }
+        }
+        if (r.conclusions.isNotEmpty()) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Выводы", style = MaterialTheme.typography.titleMedium)
+                        r.conclusions.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                        Text("Выводы общие и не заменяют консультацию врача.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatTile(m: HealthStats.Metric, modifier: Modifier) {
+    Card(modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text(m.title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val v = m.cur
+            Text(
+                when {
+                    v == null -> "—"
+                    m.key == "sleep" || m.key == "weight" -> "%.1f".format(v)
+                    else -> "${v.roundToInt()}"
+                } + if (v != null && m.unit.isNotEmpty()) " ${m.unit}" else "",
+                style = MaterialTheme.typography.displaySmall.copy(fontSize = 26.sp, lineHeight = 30.sp),
+                maxLines = 1,
+            )
+            val d = m.deltaPct
+            val delta = if (m.key == "weight" && m.cur != null && m.prev != null) "%+.1f кг".format(m.cur - m.prev) else d?.let { "%+d%%".format(it.roundToInt()) }
+            if (delta != null) {
+                val up = (d ?: (m.cur!! - m.prev!!)) > 0
+                val good = m.goodUp?.let { it == up }
+                Text(
+                    "$delta к прошлому периоду",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when (good) { true -> Color(0xFF3F8A5A); false -> Color(0xFFC0583F); null -> MaterialTheme.colorScheme.onSurfaceVariant },
+                )
+            } else {
+                Text(if (m.cur == null) "нет данных" else "нет данных для сравнения", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }
 
 // ======================= ПРОФИЛЬ =======================

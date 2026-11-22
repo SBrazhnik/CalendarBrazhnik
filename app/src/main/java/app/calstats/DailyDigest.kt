@@ -18,23 +18,9 @@ object DailyDigest {
     private const val UPD_CHANNEL = "app_update"
 
     fun text(ctx: Context, today: LocalDate): String {
-        val w = WorkStore(ctx).load()
-        val open = w.issues.filter { it.assigneeId == ME && it.status != Status.DONE }
-        val due = open.filter { it.dueDate == today }
-        val overdue = open.filter { it.dueDate?.isBefore(today) == true }
-        val out = StringBuilder("☀ Доброе утро! ${Fmt.dayTitle(today, today)}\n")
-        if (due.isNotEmpty()) {
-            out.append("\n📌 Задачи на сегодня:\n")
-            due.take(8).forEach { out.append("• ${it.title}\n") }
-        }
-        if (overdue.isNotEmpty()) out.append("\n⚠ Просрочено задач: ${overdue.size}\n")
-        val lines = DocsReminder.lines(ctx, today)
-        if (lines.isNotEmpty()) {
-            out.append("\n🔔 Напоминания:\n")
-            lines.forEach { out.append("$it\n") }
-        }
-        if (due.isEmpty() && overdue.isEmpty() && lines.isEmpty()) out.append("\nСрочных дел нет — хорошего дня 🌿")
-        return out.toString().trim()
+        val lines = Notify.morningLines(ctx, today)
+        return "☀ Доброе утро! ${Fmt.dayTitle(today, today)}\n\n" +
+            (if (lines.isEmpty()) "Срочных дел нет — хорошего дня 🌿" else lines.joinToString("\n"))
     }
 
     suspend fun run(ctx: Context) {

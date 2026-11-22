@@ -46,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.FilterChip
 import androidx.compose.ui.unit.dp
 import android.Manifest
 import android.app.TimePickerDialog
@@ -158,6 +159,53 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Button(onClick = { vm.syncNow() }, modifier = Modifier.fillMaxWidth()) { Text("Синхронизировать сейчас") }
+            }
+
+            Section("Уведомления") {
+                val ns = remember { app.calstats.Notify.Settings(ctx) }
+                var morning by remember { mutableStateOf(ns.morning) }
+                var mTime by remember { mutableStateOf(ns.morningTime) }
+                var evening by remember { mutableStateOf(ns.evening) }
+                var eTime by remember { mutableStateOf(ns.eveningTime) }
+                var events by remember { mutableStateOf(ns.events) }
+                var before by remember { mutableStateOf(ns.before) }
+                fun apply() { app.calstats.Notify.scheduleAll(ctx) }
+                @Composable
+                fun Toggle(title: String, sub: String, on: Boolean, set: (Boolean) -> Unit) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(title)
+                            Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = on, onCheckedChange = {
+                            set(it)
+                            apply()
+                            if (it && !DrinkReminder.canNotify(ctx) && Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        })
+                    }
+                }
+                Toggle("Утренняя сводка", "События дня, задачи, платежи, долги, документы, привычки", morning) { morning = it; ns.morning = it }
+                if (morning) OutlinedButton(onClick = {
+                    TimePickerDialog(ctx, { _, h, m -> mTime = LocalTime.of(h, m); ns.morningTime = mTime; apply() }, mTime.hour, mTime.minute, true).show()
+                }, modifier = Modifier.fillMaxWidth()) { Text("Утром в " + Fmt.time(mTime)) }
+                Toggle("Напоминать о событиях", "Перед началом каждого события календаря", events) { events = it; ns.events = it }
+                if (events) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(5, 10, 15, 30, 60).forEach { m ->
+                            FilterChip(selected = before == m, onClick = { before = m; ns.before = m; apply() }, label = { Text(if (m < 60) "за $m мин" else "за 1 ч") })
+                        }
+                    }
+                }
+                Toggle("Вечерний итог", "Неотмеченные привычки, задачи и платежи на завтра", evening) { evening = it; ns.evening = it }
+                if (evening) OutlinedButton(onClick = {
+                    TimePickerDialog(ctx, { _, h, m -> eTime = LocalTime.of(h, m); ns.eveningTime = eTime; apply() }, eTime.hour, eTime.minute, true).show()
+                }, modifier = Modifier.fillMaxWidth()) { Text("Вечером в " + Fmt.time(eTime)) }
+                TextButton(onClick = { app.calstats.Notify.handle(ctx, android.content.Intent(app.calstats.Notify.ACTION_MORNING)) }) { Text("Показать утреннюю сводку сейчас") }
+                Text(
+                    "Если события дублируются с календарём Samsung или Google, выключите напоминания там или здесь.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             Section("Учёт алкоголя") {

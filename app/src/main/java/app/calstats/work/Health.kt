@@ -263,3 +263,84 @@ val FOOD_BASE: List<FoodItem> = listOf(
     FoodItem("Вино сухое", 68.0, 0.1, 0.0, 0.3, portion = 150),
     FoodItem("Протеиновый коктейль", 380.0, 75.0, 5.0, 8.0, portion = 30),
 )
+
+/** Статистика здоровья за период и сравнение с предыдущим таким же периодом. */
+object HealthStats {
+    /** [cur] и [prev] — средние за день (null — нет данных). [goodUp]: true — рост хорош, false — плох, null — нейтрально. */
+    data class Metric(val key: String, val title: String, val unit: String, val cur: Double?, val prev: Double?, val goodUp: Boolean?) {
+        val deltaPct: Double? get() = if (cur == null || prev == null || prev == 0.0) null else (cur - prev) / prev * 100
+    }
+
+    data class Result(val metrics: List<Metric>, val conclusions: List<String>, val loggedDays: Int, val days: Int)
+
+    private fun avg(xs: List<Double>) = if (xs.isEmpty()) null else xs.average()
+
+    fun compute(w: Workspace, h: HealthSnapshot?, today: LocalDate, days: Int): Result {
+        val cur = (0 until days).map { today.minusDays(it.toLong()) }
+        val prev = (days until days * 2).map { today.minusDays(it.toLong()) }
+        val food = w.foodLog.groupBy { it.date }
+        fun kcal(ds: List<LocalDate>) = avg(ds.mapNotNull { d -> food[d.toString()]?.sumOf { it.kcal } })
+        fun prot(ds: List<LocalDate>) = avg(ds.mapNotNull { d -> food[d.toString()]?.sumOf { it.protein } })
+        val water = w.waterLog.associate { it.date to it.ml }
+        fun wat(ds: List<LocalDate>) = avg(ds.mapNotNull { d -> water[d.toString()]?.toDouble()?.takeIf { it > 0 } })
+        fun hc(ds: List<LocalDate>, series: List<Number>?) = h?.let { s ->
+            avg(ds.mapNotNull { d -> s.days.indexOf(d).takeIf { it >= 0 }?.let { series?.getOrNull(it)?.toDouble() }?.takeIf { it > 0 } })
+        }
+        val weights = w.weightLog.mapNotNull { e -> runCatching { LocalDate.parse(e.date) }.getOrNull()?.let { it to e.kg } }.sortedBy { it.first }
+        fun weightAt(ds: List<LocalDate>) = weights.filter { it.first in ds }.lastOrNull()?.second
+        val metrics = listOf(
+            Metric("kcal", "Калории", "ккал", kcal(cur), kcal(prev), null),
+            Metric("protein", "Белок", "г", prot(cur), prot(prev), true),
+            Metric("water", "Вода", "мл", wat(cur), wat(prev), true),
+            Metric("steps", "Шаги", "", hc(cur.filter { it != today }, h?.steps), hc(prev, h?.steps), true),
+            Metric("sleep", "Сон", "ч", hc(cur, h?.sleepMin)?.div(60), hc(prev, h?.sleepMin)?.div(60), true),
+            Metric("weight", "Вес", "кг", weightAt(cur), weightAt(prev), null),
+        )
+        val logged = cur.count { food.containsKey(it.toString()) }
+        return Result(metrics, conclusions(w, metrics, logged, days, today), logged, days)
+    }
+
+    private fun conclusions(w: Workspace, m: List<Metric>, logged: Int, days: Int, today: LocalDate): List<String> {
+        val out = ArrayList<String>()
+        val by = m.associateBy { it.key }
+        val p = w.healthProfile
+        val n = p?.let { HealthMath.norms(it, today) }
+        val period = if (days == 7) "неделю" else "месяц"
+        if (logged < days / 2) out += "📝 Питание записано $logged из $days дней — чем полнее дневник, тем точнее выводы."
+        by["kcal"]?.cur?.let { k ->
+            if (n != null) {
+                val diff = (k - n.kcal) / n.kcal * 100
+                out += when {
+                    diff > 10 -> "🍽 В среднем ${k.roundToInt()} ккал в день — на ${diff.roundToInt()}% выше нормы (${n.kcal})."
+                    diff < -20 -> "🍽 В среднем ${k.roundToInt()} ккал — заметно ниже нормы (${n.kcal}). Возможно, записано не всё."
+                    else -> "✅ Калорийность в пределах нормы: в среднем ${k.roundToInt()} из ${n.kcal} ккал."
+                }
+            }
+        }
+        by["protein"]?.cur?.let { pr -> if (n != null && pr < n.protein * 0.75) out += "🥚 Белка в среднем ${pr.roundToInt()} г из ${n.protein} — стоит добавить." }
+        by["water"]?.cur?.let { wa -> if (n != null && wa < n.waterMl * 0.7) out += "💧 Воды в среднем ${wa.roundToInt()} мл при норме ${n.waterMl}." }
+        by["steps"]?.let { s ->
+            val d = s.deltaPct
+            if (s.cur != null && d != null && kotlin.math.abs(d) >= 10) {
+                out += if (d > 0) "🚶 Шагов больше на ${d.roundToInt()}%, чем за прошлый $period. Так держать!"
+                else "🚶 Шагов меньше на ${(-d).roundToInt()}%, чем за прошлый $period."
+            }
+            if (s.cur != null && p != null && s.cur >= p.stepsGoal) out += "🏅 Цель по шагам выполняется: в среднем ${s.cur.roundToInt()} в день."
+        }
+        by["sleep"]?.cur?.let { sl ->
+            if (sl < 7) out += "😴 Сон в среднем ${"%.1f".format(sl)} ч — меньше рекомендуемых 7–9 ч."
+            else out += "😴 Сон в норме: в среднем ${"%.1f".format(sl)} ч."
+        }
+        by["weight"]?.let { wt ->
+            if (wt.cur != null && wt.prev != null) {
+                val d = wt.cur - wt.prev
+                if (kotlin.math.abs(d) >= 0.2) {
+                    val goodDir = when (p?.goal) { WeightGoal.LOSE -> d < 0; WeightGoal.GAIN -> d > 0; else -> null }
+                    out += "⚖ Вес ${if (d > 0) "вырос" else "снизился"} на ${"%.1f".format(kotlin.math.abs(d))} кг" +
+                        when (goodDir) { true -> " — в сторону цели 👍"; false -> " — против цели"; null -> "" }
+                }
+            }
+        }
+        return out
+    }
+}

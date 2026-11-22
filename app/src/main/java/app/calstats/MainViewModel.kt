@@ -62,6 +62,7 @@ enum class Tab(val title: String, val description: String) {
     HEALTH("Здоровье", "Питание, вода, вес, шаги и сон из Samsung Health"),
     DOCS("Документы", "Паспорта, права, полисы, гарантии, подписки и их сроки"),
     ACCOUNTS("Подключения", "Samsung Health, Google, Яндекс, Telegram и другие учётные записи"),
+    GUIDE("Инструкции", "Как пользоваться каждым модулем — по шагам с картинками"),
     MONEY("Расходы", "Общие чеки и кто кому должен"),
     ANALYSIS("Анализ", "Дни и часы по направлениям"),
     WISHES("Желания", "Списки желаний и подарков"),
@@ -90,6 +91,7 @@ sealed interface Screen {
     ) : Screen
     data object Colors : Screen
     data object Profile : Screen
+    data object About : Screen
     data class DocEdit(val id: String?) : Screen
     data class IssueDetail(val id: String) : Screen
     data object People : Screen
@@ -259,12 +261,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         uiPrefs.edit().putString("home_order", list.joinToString(",") { it.name }).apply()
     }
 
+    /** Перетаскивание: поставить плитку [t] на место плитки [target]. */
+    fun moveTileTo(t: Tab, target: Tab) {
+        if (t == target) return
+        val list = homeOrder.toMutableList()
+        val from = list.indexOf(t)
+        val to = list.indexOf(target)
+        if (from < 0 || to < 0) return
+        list.removeAt(from)
+        list.add(list.indexOf(target) + if (from < to) 1 else 0, t)
+        homeOrder = list
+        uiPrefs.edit().putString("home_order", list.joinToString(",") { it.name }).apply()
+    }
+
     fun setTileHidden(t: Tab, hidden: Boolean) {
         homeHidden = if (hidden) homeHidden + t else homeHidden - t
         uiPrefs.edit().putString("home_hidden", homeHidden.joinToString(",") { it.name }).apply()
     }
 
     var editHome by mutableStateOf(false)
+    /** Окно «Что нового» уже проверено в этом запуске. */
+    var whatsNewChecked by mutableStateOf(false)
 
     // ---------- Профиль и обновления ----------
     var avatarVersion by mutableStateOf(0)
@@ -506,12 +523,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             healthGranted = g
             if (g == 0) return@launch
             healthLoading = true
-            health = runCatching { withContext(Dispatchers.IO) { HealthLink.load(ctx) } }.getOrNull() ?: health
+            health = runCatching { withContext(Dispatchers.IO) { HealthLink.load(ctx, 60) } }.getOrNull() ?: health
             healthLoading = false
         }
     }
 
     fun onResume() {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { Notify.scheduleEvents(getApplication()) } }
+        Usage.open(getApplication())
         refreshHealth()
         checkUpdate()
         pullTelegram()
@@ -519,6 +538,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         work = workStore.load()
         DrinkReminder.schedule(getApplication())
         DocsReminder.schedule(getApplication())
+        viewModelScope.launch(Dispatchers.IO) { runCatching { Notify.scheduleAll(getApplication()) } }
         hasPermission = checkPermission()
         now = System.currentTimeMillis()
         today = LocalDate.now()

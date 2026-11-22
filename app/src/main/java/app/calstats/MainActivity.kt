@@ -123,6 +123,7 @@ fun App(vm: MainViewModel) {
     }
 
     vm.incoming?.let { IncomingDialog(vm, it) }
+    if (!vm.whatsNewChecked && vm.stack.size == 1) app.calstats.ui.WhatsNewDialog(vm)
 
     when (val screen = vm.stack.last()) {
         Screen.Main -> HomeScreen(vm, snackbar)
@@ -140,5 +141,6 @@ fun App(vm: MainViewModel) {
         is Screen.WishListDetail -> app.calstats.ui.WishListScreen(vm, screen.id, snackbar)
         is Screen.DocEdit -> app.calstats.ui.DocEditScreen(vm, screen.id, snackbar)
         Screen.Profile -> app.calstats.ui.ProfileScreen(vm, snackbar)
+        Screen.About -> app.calstats.ui.AboutScreen(vm, snackbar)
     }
 }

@@ -29,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.DrawerState
@@ -91,6 +92,7 @@ fun HomeScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     }
     // Выключенный модуль открыт — уходим на главную.
     LaunchedEffect(vm.disabledModules) { if (!vm.isEnabled(vm.tab)) vm.tab = Tab.HOME }
+    LaunchedEffect(vm.tab) { app.calstats.Usage.module(ctx, vm.tab) }
 
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -114,6 +116,7 @@ fun HomeScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                         Tab.HEALTH -> HealthTab(vm, snackbar)
                         Tab.DOCS -> DocsTab(vm, snackbar)
                         Tab.ACCOUNTS -> AccountsTab(vm, snackbar)
+                        Tab.GUIDE -> GuideTab(vm, snackbar)
                         Tab.MONEY -> MoneyTab(vm, snackbar)
                         Tab.ANALYSIS -> AnalysisTab(vm, snackbar)
                         Tab.WISHES -> WishesTab(vm, snackbar)
@@ -162,7 +165,7 @@ private fun AppDrawer(vm: MainViewModel, drawer: DrawerState) {
             Spacer(Modifier.height(6.dp))
             DrawerItem({ ModuleIcon(Tab.HOME, vm.tab == Tab.HOME, 22.dp) }, "Главная", vm.tab == Tab.HOME) { go { vm.tab = Tab.HOME } }
             DrawerDivider()
-            vm.enabledModules.filter { it != Tab.ACCOUNTS }.forEach { t ->
+            vm.enabledModules.filter { it != Tab.ACCOUNTS && it != Tab.GUIDE }.forEach { t ->
                 DrawerItem({ ModuleIcon(t, false, 22.dp) }, t.title, vm.tab == t) { go { vm.tab = t } }
             }
             DrawerDivider()
@@ -170,6 +173,10 @@ private fun AppDrawer(vm: MainViewModel, drawer: DrawerState) {
                 DrawerItem({ ModuleIcon(Tab.ACCOUNTS, false, 22.dp) }, Tab.ACCOUNTS.title, vm.tab == Tab.ACCOUNTS) { go { vm.tab = Tab.ACCOUNTS } }
             }
             DrawerItem({ Icon(Icons.Outlined.AccountCircle, null, Modifier.size(22.dp)) }, "Профиль", false) { go { vm.push(Screen.Profile) } }
+            if (vm.isEnabled(Tab.GUIDE)) {
+                DrawerItem({ ModuleIcon(Tab.GUIDE, false, 22.dp) }, Tab.GUIDE.title, vm.tab == Tab.GUIDE) { go { vm.tab = Tab.GUIDE } }
+            }
+            DrawerItem({ Icon(Icons.Outlined.Info, null, Modifier.size(22.dp)) }, "О приложении", false) { go { vm.push(Screen.About) } }
             DrawerItem({ Icon(painterResource(R.drawable.ic_apps), null, Modifier.size(22.dp)) }, "Модули", false) { go { vm.push(Screen.Modules) } }
             DrawerItem({ Icon(Icons.Outlined.Settings, null, Modifier.size(22.dp)) }, "Настройки", false) { go { vm.push(Screen.Settings) } }
             DrawerDivider()

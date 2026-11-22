@@ -116,7 +116,7 @@ import java.time.temporal.ChronoUnit
 
 private val INCOME_C = Color(0xFF2E8B6B)
 private val EXPENSE_C = Color(0xFFD9667A)
-private val FIN_VIEWS = listOf("OVERVIEW" to "Обзор", "TXS" to "Операции", "BUDGETS" to "Бюджеты", "PAYMENTS" to "Платежи", "GOALS" to "Цели", "ACCOUNTS" to "Счета")
+private val FIN_VIEWS = listOf("OVERVIEW" to "Обзор", "TXS" to "Операции", "DEBTS" to "Долги", "BUDGETS" to "Бюджеты", "PAYMENTS" to "Платежи", "GOALS" to "Цели", "ACCOUNTS" to "Счета")
 
 private fun money(k: Long) = SplitMath.money(k)
 
@@ -133,6 +133,9 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var accountDialog by remember { mutableStateOf<Account?>(null) }
     var menu by remember { mutableStateOf(false) }
     var importRows by remember { mutableStateOf<List<BankImport.Row>?>(null) }
+    var debtDialog by remember { mutableStateOf<app.calstats.work.Debt?>(null) }
+    var debtSheet by remember { mutableStateOf<String?>(null) }
+    var partyDialog by remember { mutableStateOf<app.calstats.work.Counterparty?>(null) }
 
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -193,7 +196,14 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { newTx() }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Операция") })
+            if (view == "DEBTS") {
+                ExtendedFloatingActionButton(
+                    onClick = { debtDialog = app.calstats.work.Debt(newId(), "", date = vm.today.toString()) },
+                    icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Долг") },
+                )
+            } else {
+                ExtendedFloatingActionButton(onClick = { newTx() }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Операция") })
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { pad ->
@@ -225,8 +235,11 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     item { StartCard(vm) { accountDialog = it } }
                 }
                 when (view) {
-                    "OVERVIEW" -> overview(vm, month, onTx = { txSheet = it }, onView = { view = it })
+                    "OVERVIEW" -> {
+                        overview(vm, month, onTx = { txSheet = it }, onView = { view = it })
+                    }
                     "TXS" -> transactions(vm, month) { txSheet = it }
+                    "DEBTS" -> debtsSection(vm, onDebt = { debtDialog = it }, onParty = { partyDialog = it }, onOpen = { debtSheet = it.id })
                     "BUDGETS" -> budgets(vm, month)
                     "PAYMENTS" -> payments(vm)
                     "GOALS" -> goals(vm)
@@ -237,6 +250,9 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     }
 
     txSheet?.let { t -> TxSheet(vm, t) { txSheet = null } }
+    debtDialog?.let { d -> DebtDialog(vm, d) { debtDialog = null } }
+    debtSheet?.let { id -> DebtSheet(vm, id, onEdit = { debtSheet = null; debtDialog = it }) { debtSheet = null } }
+    partyDialog?.let { p -> PartyDialog(vm, p) { partyDialog = null } }
     accountDialog?.let { a -> AccountDialog(vm, a) { accountDialog = null } }
     importRows?.let { rows -> ImportDialog(vm, rows) { importRows = null } }
 }
@@ -289,6 +305,7 @@ private fun LazyListScope.overview(vm: MainViewModel, month: YearMonth, onTx: (T
             }
         }
     }
+    savingsCard(vm) { onView("DEBTS") }
     val byCat = FinanceMath.byCategory(txs)
     if (byCat.isNotEmpty()) {
         item(key = "donut") {

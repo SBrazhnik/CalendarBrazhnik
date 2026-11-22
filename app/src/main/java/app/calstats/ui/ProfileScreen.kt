@@ -225,6 +225,8 @@ fun ProfileScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 ProfileLink("Настройки", "Тема, резервная копия, напоминания") { vm.push(Screen.Settings) }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 ProfileLink("Модули", "Включить, выключить, порядок в меню") { vm.push(Screen.Modules) }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                ProfileLink("О приложении", "Что нового, история версий, статистика") { vm.push(Screen.About) }
             }
             Spacer(Modifier.height(24.dp))
         }
