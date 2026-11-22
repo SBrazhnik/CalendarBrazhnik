@@ -263,6 +263,9 @@ private fun DocsList(vm: MainViewModel) {
                 }
             }
         }
+        item {
+            OutlinedButton(onClick = { scanReceipt(ctx, vm) }, modifier = Modifier.fillMaxWidth()) { Text("🧾 Гарантия по QR-коду чека") }
+        }
         if (attention.isNotEmpty()) {
             item { Text("Внимание", style = MaterialTheme.typography.titleMedium, color = SOON_C) }
             items(attention, key = { it.id }) { d -> DocCard(vm, d) }
@@ -430,6 +433,8 @@ fun DocEditScreen(vm: MainViewModel, id: String?, snackbar: SnackbarHostState) {
     var deleted by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var viewPhoto by remember { mutableStateOf<String?>(null) }
+    var scanning by remember { mutableStateOf(false) }
+    var found by remember { mutableStateOf<app.calstats.work.DocScan.Found?>(null) }
 
     if (vm.docsLock && !vm.docsUnlocked) {
         LaunchedEffect(Unit) { unlock(ctx) { vm.docsUnlocked = true } }
@@ -573,6 +578,16 @@ fun DocEditScreen(vm: MainViewModel, id: String?, snackbar: SnackbarHostState) {
                     contentAlignment = Alignment.Center,
                 ) { Text("+ фото", color = MaterialTheme.colorScheme.primary) }
             }
+            if (photos.isNotEmpty()) {
+                OutlinedButton(onClick = {
+                    scanning = true
+                    val img = com.google.mlkit.vision.common.InputImage.fromFilePath(ctx, android.net.Uri.fromFile(photoFile(ctx, photos.first())))
+                    com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+                        .process(img)
+                        .addOnSuccessListener { t -> scanning = false; found = app.calstats.work.DocScan.parse(t.text) }
+                        .addOnFailureListener { scanning = false; vm.message = "Не удалось распознать: нужны сервисы Google Play" }
+                }, enabled = !scanning) { Text(if (scanning) "Распознаю…" else "🔍 Распознать номер и даты с фото") }
+            }
             Text(
                 "Сфотографируйте разворот камерой телефона и выберите снимок. Фото хранятся внутри приложения и не попадают в облачную копию.",
                 style = MaterialTheme.typography.bodySmall,
@@ -591,6 +606,28 @@ fun DocEditScreen(vm: MainViewModel, id: String?, snackbar: SnackbarHostState) {
         }
     }
 
+    found?.let { f ->
+        AlertDialog(
+            onDismissRequest = { found = null },
+            title = { Text("Найдено на фото") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (f.numbers.isEmpty() && f.dates.isEmpty()) Text("Ничего не нашлось. Попробуйте более чёткое фото.")
+                    if (f.numbers.isNotEmpty()) Text("Номер — нажмите, чтобы вставить", style = MaterialTheme.typography.labelLarge)
+                    f.numbers.forEach { n -> OutlinedButton(onClick = { number = n; showNumber = true }) { Text(n) } }
+                    if (f.dates.isNotEmpty()) Text("Даты", style = MaterialTheme.typography.labelLarge)
+                    f.dates.sorted().forEach { d ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(Fmt.date(d), Modifier.weight(1f))
+                            TextButton(onClick = { issued = d }) { Text("выдан") }
+                            TextButton(onClick = { expires = d }) { Text("до") }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { found = null }) { Text("Готово") } },
+        )
+    }
     viewPhoto?.let { p ->
         Dialog(onDismissRequest = { viewPhoto = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             Box(Modifier.fillMaxSize().background(Color.Black).clickable { viewPhoto = null }, contentAlignment = Alignment.Center) {
@@ -694,4 +731,27 @@ fun DocsSummary(vm: MainViewModel) {
             }
         }
     }
+}
+
+/** Сканировать QR-код кассового чека: гарантия на год + (по желанию) расход в «Финансах». */
+fun scanReceipt(ctx: Context, vm: MainViewModel) {
+    val opts = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+        .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE).build()
+    com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(ctx, opts).startScan()
+        .addOnSuccessListener { b ->
+            val r = app.calstats.work.DocScan.receipt(b.rawValue.orEmpty())
+            if (r == null) {
+                vm.message = "Это не QR-код кассового чека"
+                return@addOnSuccessListener
+            }
+            val d = Document(
+                newId(), DocKind.WARRANTY, title = "Покупка на ${SplitMath.money(r.sum)}",
+                issued = r.time.toLocalDate().toString(), expires = r.time.toLocalDate().plusYears(1).toString(), remindDays = 14,
+                note = "Чек от ${Fmt.date(r.time.toLocalDate())}, сумма ${SplitMath.money(r.sum)}" + (r.fn?.let { ", ФН $it" } ?: ""),
+            )
+            vm.updateWork { DocsOps.upsert(it, d) }
+            vm.push(Screen.DocEdit(d.id))
+            vm.message = "Гарантия на год добавлена — укажите, что купили"
+        }
+        .addOnFailureListener { vm.message = "Сканер недоступен: нужны сервисы Google Play" }
 }
