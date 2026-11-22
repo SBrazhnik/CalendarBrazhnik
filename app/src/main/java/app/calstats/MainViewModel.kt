@@ -297,9 +297,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     var editHome by mutableStateOf(false)
+
+    /** Что показывает плитка модуля (ключ варианта из TILE_VARIANTS). */
+    var tileVariants by mutableStateOf(
+        uiPrefs.getString("tile_var", "").orEmpty().split(",").mapNotNull { e -> e.split(":").takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap(),
+    )
+        private set
+    fun tileVariant(t: Tab): String? = tileVariants[t.name]
+    fun setTileVariant(t: Tab, key: String) {
+        tileVariants = tileVariants + (t.name to key)
+        uiPrefs.edit().putString("tile_var", tileVariants.entries.joinToString(",") { "${it.key}:${it.value}" }).apply()
+    }
+
+    /** Какие блоки показывать в большой карточке «Финансы». */
+    var finSections by mutableStateOf(uiPrefs.getString("fin_sections", null)?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: setOf("spent", "budget", "payments", "debts"))
+        private set
+    fun toggleFinSection(k: String) {
+        finSections = if (k in finSections) finSections - k else finSections + k
+        uiPrefs.edit().putString("fin_sections", finSections.joinToString(",")).apply()
+    }
+
+    /** Плитка, для которой открыто окно настройки. */
+    var tileSettings by mutableStateOf<Tab?>(null)
     /** Окно «Событие текстом». */
     var quickEvent by mutableStateOf(false)
     var loanCalc by mutableStateOf(false)
+    var openDebt by mutableStateOf<String?>(null)
+    var newDebt by mutableStateOf(false)
     /** Окно «Что нового» уже проверено в этом запуске. */
     var whatsNewChecked by mutableStateOf(false)
 

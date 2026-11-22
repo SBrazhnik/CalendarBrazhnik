@@ -89,22 +89,74 @@ fun LazyListScope.savingsCard(vm: MainViewModel, onDebts: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (sum.owedToMe != 0L || sum.iOwe != 0L || credit != 0L) {
-                    HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onDebts)) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Мне должны", style = MaterialTheme.typography.labelMedium)
-                            Text(money(sum.owedToMe), color = PLUS, fontWeight = FontWeight.SemiBold)
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text("Я должен", style = MaterialTheme.typography.labelMedium)
-                            Text(money(sum.iOwe - credit), color = MINUS, fontWeight = FontWeight.SemiBold)
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text("Капитал", style = MaterialTheme.typography.labelMedium)
-                            Text(money(sav + sum.owedToMe - sum.iOwe + credit), fontWeight = FontWeight.SemiBold)
-                        }
+                    Text(
+                        "Капитал с учётом долгов и кредиток: " + money(sav + sum.owedToMe - sum.iOwe + credit),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onDebts),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Блок «Долги» в обзоре Финансов. */
+fun LazyListScope.debtsOverview(vm: MainViewModel, onDebts: () -> Unit, onOpen: (Debt) -> Unit, onNew: () -> Unit) {
+    item(key = "debts_overview") {
+        val w = vm.work
+        val today = vm.today
+        val sum = DebtMath.summary(w, today)
+        val open = w.debts.filter { !it.closed }
+        Card(onClick = onDebts, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Долги", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    if (sum.overdue > 0) Text("просрочено: ${sum.overdue}", style = MaterialTheme.typography.labelMedium, color = MINUS)
+                }
+                if (open.isEmpty()) {
+                    Text("Нет открытых долгов", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = onNew, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("+ Записать долг или заём") }
+                    return@Column
+                }
+                Row {
+                    Column(Modifier.weight(1f)) {
+                        Text("Мне должны", style = MaterialTheme.typography.labelMedium)
+                        Text(money(sum.owedToMe), color = PLUS, style = MaterialTheme.typography.titleMedium)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Я должен", style = MaterialTheme.typography.labelMedium)
+                        Text(money(sum.iOwe), color = MINUS, style = MaterialTheme.typography.titleMedium)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Итог", style = MaterialTheme.typography.labelMedium)
+                        Text(SplitMath.money(sum.net, sign = true), style = MaterialTheme.typography.titleMedium)
                     }
                 }
+                if (sum.monthlyIn > 0 || sum.monthlyOut > 0) {
+                    Text(
+                        "Проценты в месяц: +${money(sum.monthlyIn)} / −${money(sum.monthlyOut)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                open.sortedWith(compareBy({ it.dueDate ?: LocalDate.MAX }, { -DebtMath.status(it, today).totalDue })).take(3).forEach { d ->
+                    val s = DebtMath.status(d, today)
+                    val who = w.counterparties.firstOrNull { it.id == d.partyId }?.name ?: "?"
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOpen(d) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text((if (d.dir == DebtDir.I_OWE) "↗ " else "↙ ") + who + d.title.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(),
+                                style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            d.dueDate?.let {
+                                Text(if (s.overdueDays > 0) "просрочен ${s.overdueDays} дн." else "до ${Fmt.dateNoYear(it)}", style = MaterialTheme.typography.labelSmall,
+                                    color = if (s.overdueDays > 0) MINUS else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Text(money(s.totalDue), color = if (d.dir == DebtDir.OWED_TO_ME) PLUS else MINUS, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                if (open.size > 3) Text("и ещё ${open.size - 3} → все долги", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
         }
     }

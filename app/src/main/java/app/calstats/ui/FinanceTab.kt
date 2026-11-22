@@ -251,6 +251,8 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
 
     txSheet?.let { t -> TxSheet(vm, t) { txSheet = null } }
     debtDialog?.let { d -> DebtDialog(vm, d) { debtDialog = null } }
+    LaunchedEffect(vm.openDebt) { vm.openDebt?.let { debtSheet = it; vm.openDebt = null } }
+    LaunchedEffect(vm.newDebt) { if (vm.newDebt) { debtDialog = app.calstats.work.Debt(newId(), "", date = vm.today.toString()); vm.newDebt = false } }
     debtSheet?.let { id -> DebtSheet(vm, id, onEdit = { debtSheet = null; debtDialog = it }) { debtSheet = null } }
     partyDialog?.let { p -> PartyDialog(vm, p) { partyDialog = null } }
     if (vm.loanCalc) LoanSheet(vm) { vm.loanCalc = false }
@@ -308,6 +310,7 @@ private fun LazyListScope.overview(vm: MainViewModel, month: YearMonth, onTx: (T
     }
     bankInbox(vm)
     savingsCard(vm) { onView("DEBTS") }
+    debtsOverview(vm, onDebts = { onView("DEBTS") }, onOpen = { vm.openDebt = it.id }, onNew = { onView("DEBTS"); vm.newDebt = true })
     trendsCard(vm)
     val byCat = FinanceMath.byCategory(txs)
     if (byCat.isNotEmpty()) {

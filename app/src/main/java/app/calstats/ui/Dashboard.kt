@@ -106,6 +106,7 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     txSheet?.let { t -> TxSheet(vm, t) { txSheet = null } }
 
     val drag = remember { TileDrag() }
+    vm.tileSettings?.let { TileSettingsSheet(vm, it) }
     CompositionLocalProvider(LocalTileDrag provides drag) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -148,7 +149,7 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             if (vm.editHome) {
                 item {
                     Text(
-                        "Зажмите плитку и перетащите на новое место. S / M / L — размер, глаз — скрыть с Главной.",
+                        "Зажмите плитку и перетащите на новое место. ⚙ — размер, что показывать на плитке, скрыть.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -302,12 +303,11 @@ private fun TileControls(vm: MainViewModel, t: Tab) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Раньше", Modifier.size(20.dp))
         }
         Box(
-            Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .clickable { vm.setTileSize(t, TileSize.entries[(z.ordinal + 1) % TileSize.entries.size]) }
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-        ) { Text(when (z) { TileSize.SMALL -> "S"; TileSize.MEDIUM -> "M"; TileSize.LARGE -> "L" }, style = MaterialTheme.typography.labelLarge) }
-        IconButton(onClick = { vm.setTileHidden(t, true) }, modifier = Modifier.size(32.dp)) {
-            Icon(painterResource(R.drawable.ic_visibility_off), "Скрыть", Modifier.size(18.dp))
+            Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.secondaryContainer)
+                .clickable { vm.tileSettings = t }
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            Text("⚙ " + when (z) { TileSize.SMALL -> "S"; TileSize.MEDIUM -> "M"; TileSize.LARGE -> "L" }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
         }
         IconButton(onClick = { vm.moveTile(t, 1) }, enabled = i in 0 until vis.lastIndex, modifier = Modifier.size(32.dp)) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Позже", Modifier.size(20.dp))
@@ -403,20 +403,43 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
             val now = System.currentTimeMillis()
             val left = byDay[today].orEmpty().filter { it.allDay || it.end > now }.sortedWith(compareBy({ !it.allDay }, { it.begin }))
             val next = left.firstOrNull { !it.allDay } ?: left.firstOrNull()
-            TileInfo(
-                "${left.size}", Fmt.plural(left.size.toLong(), "событие", "события", "событий"),
-                next?.let { (if (it.allDay) "" else Fmt.time(Instant.ofEpochMilli(it.begin).atZone(vm.zone).toLocalTime()) + " ") + it.title } ?: "сегодня свободно",
-            )
+            val nextText = next?.let { (if (it.allDay) "" else Fmt.time(Instant.ofEpochMilli(it.begin).atZone(vm.zone).toLocalTime()) + " ") + it.title } ?: "сегодня свободно"
+            when (vm.tileVariant(t)) {
+                "week" -> {
+                    val wk = (0..6).sumOf { byDay[today.plusDays(it.toLong())].orEmpty().size }
+                    TileInfo("$wk", "за 7 дней", nextText)
+                }
+                "next" -> TileInfo(next?.let { if (it.allDay) "весь день" else Fmt.time(Instant.ofEpochMilli(it.begin).atZone(vm.zone).toLocalTime()) } ?: "—", "дальше", next?.title ?: "сегодня свободно")
+                else -> TileInfo("${left.size}", Fmt.plural(left.size.toLong(), "событие", "события", "событий"), nextText)
+            }
         }
         Tab.TASKS -> {
             val mine = w.issues.filter { it.assigneeId == ME && it.status != Status.DONE }
             val overdue = mine.count { it.dueDate?.isBefore(today) == true }
-            TileInfo("${mine.size}", "открыто", if (overdue > 0) "просрочено: $overdue" else "без просрочек", alert = overdue > 0)
+            val todayN = mine.count { it.dueDate == today }
+            when (vm.tileVariant(t)) {
+                "today" -> TileInfo("$todayN", "на сегодня", if (overdue > 0) "просрочено: $overdue" else "открыто ${mine.size}", alert = overdue > 0)
+                "overdue" -> TileInfo("$overdue", "просрочено", "открыто ${mine.size}", alert = overdue > 0)
+                else -> TileInfo("${mine.size}", "открыто", if (overdue > 0) "просрочено: $overdue" else "без просрочек", alert = overdue > 0)
+            }
         }
         Tab.FINANCE -> {
             val spent = w.transactions.filter { it.type == app.calstats.work.TxType.EXPENSE && it.localDate == today }.sumOf { it.amount }
             val month = app.calstats.work.FinanceMath.expense(app.calstats.work.FinanceMath.inMonth(w.transactions, java.time.YearMonth.from(today)))
-            TileInfo(SplitMath.money(spent), "сегодня", "за месяц ${SplitMath.money(month)}")
+            val debts = app.calstats.work.DebtMath.summary(w, today)
+            val debtLine = if (debts.owedToMe != 0L || debts.iOwe != 0L) "долги ${SplitMath.money(debts.net, sign = true)}" else "за месяц ${SplitMath.money(month)}"
+            when (vm.tileVariant(t)) {
+                "month" -> TileInfo(SplitMath.money(month), "за месяц", "сегодня ${SplitMath.money(spent)}")
+                "balance" -> TileInfo(SplitMath.money(app.calstats.work.FinanceMath.total(w)), "на счетах", debtLine)
+                "savings" -> TileInfo(SplitMath.money(app.calstats.work.DebtMath.savings(w)), "накоплено", debtLine)
+                "debts" -> TileInfo(
+                    SplitMath.money(kotlin.math.abs(debts.net)), if (debts.net >= 0) "вам должны (итог)" else "вы должны (итог)",
+                    "мне ${SplitMath.money(debts.owedToMe)} · я ${SplitMath.money(debts.iOwe)}", alert = debts.overdue > 0,
+                )
+                "owed" -> TileInfo(SplitMath.money(debts.owedToMe), "мне должны", if (debts.overdue > 0) "просрочено: ${debts.overdue}" else "я должен ${SplitMath.money(debts.iOwe)}", alert = debts.overdue > 0)
+                "iowe" -> TileInfo(SplitMath.money(debts.iOwe), "я должен", "мне должны ${SplitMath.money(debts.owedToMe)}", alert = debts.overdue > 0)
+                else -> TileInfo(SplitMath.money(spent), "сегодня", debtLine)
+            }
         }
         Tab.HABITS -> {
             val list = w.habits.filter { !it.archived && it.kind == app.calstats.work.HabitKind.DO && it.scheduled(today) }
@@ -432,11 +455,21 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
             val norms = w.healthProfile?.let { app.calstats.work.HealthMath.norms(it, today) }
             val kcal = w.foodLog.filter { it.date == today.toString() }.sumOf { it.kcal }.toInt()
             val steps = vm.health?.todaySteps?.takeIf { vm.healthGranted > 0 }
-            TileInfo(
-                "$kcal", "ккал" + (norms?.let { " из ${it.kcal}" } ?: ""),
-                listOfNotNull("💧 ${app.calstats.work.HealthOps.water(w, today)} мл", steps?.let { "🚶 $it" }).joinToString(" · "),
-                norms?.let { kcal.toFloat() / it.kcal },
-            )
+            val water = app.calstats.work.HealthOps.water(w, today)
+            when (vm.tileVariant(t)) {
+                "water" -> TileInfo("$water", "мл воды", "🍽 $kcal ккал", norms?.let { water.toFloat() / it.waterMl })
+                "steps" -> TileInfo(steps?.toString() ?: "—", "шагов", if (steps == null) "подключите Samsung Health" else "🍽 $kcal ккал",
+                    steps?.let { s -> s.toFloat() / (w.healthProfile?.stepsGoal ?: 8000) })
+                "sleep" -> {
+                    val sl = vm.health?.lastSleep?.takeIf { vm.healthGranted > 0 && it > 0 }
+                    TileInfo(sl?.let { Fmt.hours(it) } ?: "—", "ч сна", "🚶 ${steps ?: "—"}")
+                }
+                else -> TileInfo(
+                    "$kcal", "ккал" + (norms?.let { " из ${it.kcal}" } ?: ""),
+                    listOfNotNull("💧 $water мл", steps?.let { "🚶 $it" }).joinToString(" · "),
+                    norms?.let { kcal.toFloat() / it.kcal },
+                )
+            }
         }
         Tab.DOCS -> {
             val att = app.calstats.work.DocsMath.attention(w.documents, today)
@@ -807,19 +840,48 @@ private fun FinanceSummary(vm: MainViewModel) {
     val spentMonth = app.calstats.work.FinanceMath.expense(txs)
     val limit = w.budgets.sumOf { it.monthlyLimit }
     val upcoming = w.recurrings.filter { it.active && !it.next.isAfter(vm.today.plusDays(3)) }.sortedBy { it.next }
+    val debts = app.calstats.work.DebtMath.summary(w, vm.today)
+    val sec = vm.finSections
     SummaryCard(Tab.FINANCE, vm, subtitle = if (w.accounts.isEmpty()) null else SplitMath.money(app.calstats.work.FinanceMath.total(w))) {
-        if (w.accounts.isEmpty()) {
+        if (w.accounts.isEmpty() && w.debts.isEmpty()) {
             Muted("Добавьте счета и записывайте траты — здесь появится сводка")
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                MiniNumber(SplitMath.money(spentToday), "сегодня")
-                MiniNumber(SplitMath.money(spentMonth), "за месяц")
-                if (limit > 0) MiniNumber(
+            if ("savings" in sec) {
+                Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                    MiniNumber(SplitMath.money(app.calstats.work.DebtMath.savings(w)), "накоплено")
+                    MiniNumber(SplitMath.money(app.calstats.work.DebtMath.savings(w) + debts.net), "капитал с долгами")
+                }
+            }
+            if ("spent" in sec || "budget" in sec) Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                if ("spent" in sec) MiniNumber(SplitMath.money(spentToday), "сегодня")
+                if ("spent" in sec) MiniNumber(SplitMath.money(spentMonth), "за месяц")
+                if ("budget" in sec && limit > 0) MiniNumber(
                     SplitMath.money((limit - w.budgets.sumOf { b -> txs.filter { it.type == app.calstats.work.TxType.EXPENSE && it.categoryId == b.categoryId }.sumOf { it.amount } }).coerceAtLeast(0)),
                     "осталось в бюджете",
                 )
             }
-            upcoming.take(2).forEach { r ->
+            if ("debts" in sec && (debts.owedToMe != 0L || debts.iOwe != 0L)) {
+                androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    MiniNumber(SplitMath.money(debts.owedToMe), "мне должны")
+                    MiniNumber(SplitMath.money(debts.iOwe), "я должен")
+                    MiniNumber(SplitMath.money(debts.net, sign = true), "итог")
+                }
+                val near = w.debts.filter { !it.closed && it.dueDate != null }.sortedBy { it.dueDate }.firstOrNull()
+                near?.let { d ->
+                    val st = app.calstats.work.DebtMath.status(d, vm.today)
+                    val who = w.counterparties.firstOrNull { it.id == d.partyId }?.name.orEmpty()
+                    val days = ChronoUnit.DAYS.between(vm.today, d.dueDate)
+                    Text(
+                        "💸 " + (if (d.dir == app.calstats.work.DebtDir.I_OWE) "Вернуть $who" else "$who вернёт") + " ${SplitMath.money(st.totalDue)} — " +
+                            when { days < 0 -> "просрочено на ${-days} дн."; days == 0L -> "сегодня"; else -> "через ${Fmt.days(days)}" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (days < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+            if ("payments" in sec) upcoming.take(2).forEach { r ->
                 val d = ChronoUnit.DAYS.between(vm.today, r.next)
                 Text(
                     "🔔 ${r.name} — ${SplitMath.money(r.amount)}, " + when {
