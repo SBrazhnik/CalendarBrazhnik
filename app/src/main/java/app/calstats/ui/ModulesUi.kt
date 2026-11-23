@@ -76,6 +76,7 @@ fun moduleColor(t: Tab): Color = when (t) {
     Tab.ACCOUNTS -> Color(0xFF7C5CE6)
     Tab.GUIDE -> Color(0xFF9A7B3F)
     Tab.SHOPPING -> Color(0xFF3F8A5A)
+    Tab.CARDS -> Color(0xFFB0656B)
     Tab.GOALS -> Color(0xFFC27B44)
     Tab.JOURNAL -> Color(0xFF7A5C8C)
     Tab.CAR -> Color(0xFF4A5A6A)
@@ -102,6 +103,7 @@ fun ModuleIcon(t: Tab, selected: Boolean = false, size: Dp = 24.dp, tint: Color?
         Tab.ACCOUNTS -> Icon(painterResource(R.drawable.ic_link), null, m, tint = c)
         Tab.GUIDE -> Icon(painterResource(R.drawable.ic_book), null, m, tint = c)
         Tab.SHOPPING -> Icon(painterResource(R.drawable.ic_cart), null, m, tint = c)
+        Tab.CARDS -> Icon(painterResource(R.drawable.ic_cards), null, m, tint = c)
         Tab.GOALS -> Icon(painterResource(R.drawable.ic_flag), null, m, tint = c)
         Tab.JOURNAL -> Icon(painterResource(R.drawable.ic_journal), null, m, tint = c)
         Tab.CAR -> Icon(painterResource(R.drawable.ic_car), null, m, tint = c)
@@ -236,6 +238,12 @@ fun IncomingDialog(vm: MainViewModel, sh: SharedText) {
                     }
                     if (vm.isEnabled(Tab.TASKS)) ChoiceRow(Tab.TASKS, "Задача") { vm.saveIncomingAsTask() }
                     if (vm.isEnabled(Tab.SHOPPING)) ChoiceRow(Tab.SHOPPING, "В покупки") { vm.saveIncomingAsShopping() }
+                    val cardNum = app.calstats.work.CardsKit.numberFromText(sh.text)
+                    if (vm.isEnabled(Tab.CARDS) && cardNum != null) ChoiceRow(Tab.CARDS, "Бонусная карта") {
+                        vm.pendingCard = app.calstats.work.LoyaltyCard(app.calstats.work.newId(), sh.subject.orEmpty(), cardNum, app.calstats.work.CardsKit.guess(cardNum), note = sh.text.take(200))
+                        vm.incoming = null
+                        vm.tab = Tab.CARDS
+                    }
                 } else {
                     lists.forEach { l ->
                         Row(

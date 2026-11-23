@@ -73,6 +73,16 @@ class MainActivity : ComponentActivity() {
 
     /** Текст или ссылка из другого приложения (Samsung Notes, Keep, Яндекс, браузер, маркетплейс). */
     private fun handleShare(intent: Intent?) {
+        // Файл карты .pkpass: «Открыть с помощью» или «Поделиться»
+        val stream = intent?.data ?: (if (intent?.action == Intent.ACTION_SEND) intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM) else null)
+        if (stream != null && (intent?.type?.contains("pkpass") == true || stream.toString().endsWith(".pkpass", true) || intent?.action == Intent.ACTION_VIEW)) {
+            app.calstats.ui.importPkpass(this, stream)?.let { c ->
+                vm.pendingCard = c
+                vm.tab = Tab.CARDS
+                if (!vm.isEnabled(Tab.CARDS)) vm.setModuleEnabled(Tab.CARDS, true)
+                return
+            }
+        }
         intent?.getStringExtra(EXTRA_TAB)?.let { t ->
             Tab.entries.firstOrNull { it.name == t }?.takeIf { vm.isEnabled(it) }?.let { vm.stack.clear(); vm.stack.add(Screen.Main); vm.tab = it }
         }

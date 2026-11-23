@@ -385,7 +385,7 @@ private fun LargeCard(vm: MainViewModel, t: Tab) {
         Tab.ANALYSIS -> AnalysisSummary(vm)
         Tab.WISHES -> WishesSummary(vm)
         Tab.NOTES -> NotesSummary(vm)
-        Tab.ACCOUNTS, Tab.GUIDE, Tab.SHOPPING, Tab.GOALS, Tab.JOURNAL, Tab.CAR, Tab.HOME_UTIL, Tab.PETS -> MediumTile(vm, t, Modifier.fillMaxWidth())
+        Tab.ACCOUNTS, Tab.GUIDE, Tab.SHOPPING, Tab.CARDS, Tab.GOALS, Tab.JOURNAL, Tab.CAR, Tab.HOME_UTIL, Tab.PETS -> MediumTile(vm, t, Modifier.fillMaxWidth())
         Tab.HOME -> {}
     }
 }
@@ -507,6 +507,10 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
         Tab.SHOPPING -> {
             val left = w.shopItems.filter { !it.done }
             TileInfo("${left.size}", "купить", left.take(3).joinToString(", ") { it.name }.ifBlank { "список пуст" })
+        }
+        Tab.CARDS -> {
+            val top = w.cards.sortedByDescending { it.uses }.take(3)
+            TileInfo("${w.cards.size}", "карт", top.joinToString(", ") { it.store }.ifBlank { "добавьте первую карту" })
         }
         Tab.GOALS -> {
             val g = w.lifeGoals.filter { it.year == today.year }

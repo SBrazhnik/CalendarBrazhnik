@@ -118,6 +118,7 @@ fun HomeScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                         Tab.ACCOUNTS -> AccountsTab(vm, snackbar)
                         Tab.GUIDE -> GuideTab(vm, snackbar)
                         Tab.SHOPPING -> ShoppingTab(vm, snackbar)
+                        Tab.CARDS -> CardsTab(vm, snackbar)
                         Tab.GOALS -> GoalsTab(vm, snackbar)
                         Tab.JOURNAL -> JournalTab(vm, snackbar)
                         Tab.CAR -> CarTab(vm, snackbar)

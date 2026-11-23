@@ -65,6 +65,7 @@ enum class Tab(val title: String, val description: String) {
     DOCS("Документы", "Паспорта, права, полисы, гарантии, подписки и их сроки"),
     ACCOUNTS("Подключения", "Samsung Health, Google, Яндекс, Telegram и другие учётные записи"),
     SHOPPING("Покупки", "Списки покупок: продукты, аптека, дом — отмечайте в магазине"),
+    CARDS("Карты", "Бонусные и скидочные карты магазинов: штрихкод на кассе"),
     GOALS("Цели", "Цели на год по сферам жизни: шаги и прогресс"),
     JOURNAL("Дневник", "Запись дня, благодарности и лучший момент"),
     CAR("Авто", "Заправки, ТО, расходы, расход топлива и пробег"),
@@ -322,6 +323,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Окно «Событие текстом». */
     var quickEvent by mutableStateOf(false)
     var loanCalc by mutableStateOf(false)
+    /** Карта, пришедшая из файла .pkpass или «Поделиться», — откроется в модуле «Карты». */
+    var pendingCard by mutableStateOf<app.calstats.work.LoyaltyCard?>(null)
     var openDebt by mutableStateOf<String?>(null)
     var newDebt by mutableStateOf(false)
     /** Окно «Что нового» уже проверено в этом запуске. */
