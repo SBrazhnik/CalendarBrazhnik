@@ -46,6 +46,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.unit.dp
 import android.Manifest
@@ -159,6 +161,70 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Button(onClick = { vm.syncNow() }, modifier = Modifier.fillMaxWidth()) { Text("Синхронизировать сейчас") }
+            }
+
+            Section("Даты из модулей в календаре") {
+                val es = remember { app.calstats.CalendarExport.Settings(ctx) }
+                var ver by remember { mutableStateOf(0) }
+                val writable = vm.calendars.filter { it.writable }
+                val target = remember(ver, vm.calendars) { app.calstats.CalendarExport.target(ctx, es) }
+                val colors = remember(target) {
+                    target?.let { runCatching { app.calstats.CalendarRepository(ctx).eventColors(it.accountName, it.accountType) }.getOrNull() }.orEmpty()
+                }
+                Text(
+                    "Сроки долгов, документов, платежи, прививки, ТО появятся событиями на весь день с напоминанием. " +
+                        "Изменили или закрыли в приложении — событие обновится или исчезнет.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                var calMenu by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { calMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Календарь: " + (target?.let { it.name + " · " + it.accountName } ?: "нет доступного"))
+                    }
+                    androidx.compose.material3.DropdownMenu(calMenu, { calMenu = false }) {
+                        writable.forEach { c ->
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(c.name + " · " + c.accountName) }, onClick = {
+                                es.calendarKey = c.key; calMenu = false; ver++; vm.exportDates(now = true)
+                            })
+                        }
+                    }
+                }
+                app.calstats.CalendarExport.Source.entries.forEach { src ->
+                    var on by remember(ver) { mutableStateOf(es.on(src)) }
+                    var key by remember(ver) { mutableStateOf(es.colorKey(src)) }
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(src.title)
+                                Text(src.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = on, onCheckedChange = { on = it; es.setOn(src, it); vm.exportDates() })
+                        }
+                        if (on && colors.isNotEmpty()) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                FilterChip(selected = key == null, onClick = { key = null; es.setColorKey(src, null); vm.exportDates() }, label = { Text("цвет календаря") })
+                                colors.forEach { o ->
+                                    FilterChip(
+                                        selected = key == o.key,
+                                        onClick = { key = o.key; es.setColorKey(src, o.key); vm.exportDates() },
+                                        leadingIcon = { ColorDot(vm.directionDisplay(o.color), 14.dp) },
+                                        label = { Text(vm.directionName(o.color) ?: "без названия", maxLines = 1) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { vm.exportDates(now = true) }) { Text("Обновить сейчас") }
+                    TextButton(onClick = {
+                        app.calstats.CalendarExport.Source.entries.forEach { es.setOn(it, false) }
+                        ver++
+                        Thread { app.calstats.CalendarExport.removeAll(ctx) }.start()
+                        vm.message = "События из модулей убраны из календаря"
+                    }) { Text("Убрать все") }
+                }
             }
 
             Section("Уведомления") {

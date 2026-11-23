@@ -343,7 +343,17 @@ fun DebtDialog(vm: MainViewModel, d0: Debt, onDismiss: () -> Unit) {
                         Text(due?.let { "До ${Fmt.date(it)}" } ?: "Срок возврата")
                     }
                 }
-                if (due != null) TextButton(onClick = { due = null }) { Text("Без срока") }
+                if (due != null) {
+                    TextButton(onClick = { due = null }) { Text("Без срока") }
+                    val ctx2 = LocalContext.current
+                    val on = remember { app.calstats.CalendarExport.Settings(ctx2).on(app.calstats.CalendarExport.Source.DEBTS) }
+                    Text(
+                        if (on) "📅 Дата возврата попадёт в календарь с напоминанием накануне и за 3 дня"
+                        else "📅 Добавлять сроки долгов в календарь можно в Настройках → «Даты из модулей в календаре»",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (kop > 0 && r > 0) {
                     val preview = DebtMath.status(Debt("p", "", dir, principal = kop, date = vm.today.toString(), due = due?.toString(), ratePerMonth = r), vm.today)
                     val months = due?.let { java.time.temporal.ChronoUnit.DAYS.between(date, it) / DebtMath.DAYS_IN_MONTH }

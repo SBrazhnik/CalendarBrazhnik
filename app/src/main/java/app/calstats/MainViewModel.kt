@@ -351,6 +351,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private set
     fun changePayday(d: Int?) { payday = d; uiPrefs.edit().putInt("payday", d ?: 0).apply() }
 
+    // ---------- Даты из модулей → календарь ----------
+    private var exportJob: kotlinx.coroutines.Job? = null
+    fun exportDates(w: app.calstats.work.Workspace = work, now: Boolean = false) {
+        exportJob?.cancel()
+        exportJob = viewModelScope.launch(Dispatchers.IO) {
+            if (!now) kotlinx.coroutines.delay(2500)
+            val n = runCatching { CalendarExport.sync(getApplication(), w, today) }.getOrDefault(0)
+            if (now) withContext(Dispatchers.Main) { message = if (n == 0) "Календарь уже в актуальном состоянии" else "Обновлено в календаре: $n" }
+        }
+    }
+
     // ---------- Фокус (помидор) ----------
     data class Focus(val issueId: String?, val title: String, val minutes: Int, val endAt: Long, val pausedLeft: Long? = null, val breakMode: Boolean = false)
     var focus by mutableStateOf<Focus?>(null)
@@ -656,6 +667,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { Notify.scheduleEvents(getApplication()) } }
         loadBirthdays()
         refreshBank()
+        exportDates()
         Usage.open(getApplication())
         refreshHealth()
         checkUpdate()
@@ -888,6 +900,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             app.calstats.widget.TodayWidget.refresh(getApplication())
             runCatching { Notify.scheduleHabits(getApplication(), w) }
             runCatching { Notify.scheduleMeds(getApplication(), w) }
+            exportDates(w)
         }
     }
 
