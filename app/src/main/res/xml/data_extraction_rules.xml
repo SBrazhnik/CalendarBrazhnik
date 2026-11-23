@@ -6,6 +6,9 @@
         <include domain="file" path="." />
         <!-- Фото документов в облако не уходят, только при прямом переносе на новый телефон -->
         <exclude domain="file" path="docs/" />
+        <!-- Токен Telegram-бота и копии файла данных в облако не уходят -->
+        <exclude domain="sharedpref" path="telegram.xml" />
+        <exclude domain="file" path="work.json.tmp" />
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" path="." />

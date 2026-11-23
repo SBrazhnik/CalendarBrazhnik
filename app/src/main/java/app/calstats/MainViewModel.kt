@@ -607,6 +607,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     var selectedDate by mutableStateOf(LocalDate.now())
     var work by mutableStateOf(workStore.load())
+    @Volatile private var workStamp = workStore.stamp()
         private set
     /** Выбранный проект во вкладке «Задачи» (null — все проекты). */
     private var projectState by mutableStateOf<String?>(uiPrefs.getString("project", null))
@@ -713,7 +714,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         checkUpdate()
         pullTelegram()
         drinks = sobrietyStore.load()
-        work = workStore.load()
+        // Перечитываем данные, только если их поменяли извне (виджет, уведомление), и не в главном потоке.
+        viewModelScope.launch(Dispatchers.IO) {
+            if (workStore.stamp() != workStamp && !saveLock.isLocked) {
+                val w = workStore.load(); val st = workStore.stamp()
+                withContext(Dispatchers.Main) { work = w; workStamp = st }
+            }
+        }
         if (Backup.autoDue(getApplication())) backupToFolder()
         DrinkReminder.schedule(getApplication())
         DocsReminder.schedule(getApplication())
@@ -944,7 +951,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // больше не пишут файл параллельно и не могут затереть новое старым.
         viewModelScope.launch(Dispatchers.IO) {
             saveLock.lock()
-            try { if (work === w) runCatching { workStore.save(w) } } finally { saveLock.unlock() }
+            try { if (work === w) runCatching { workStore.save(w); workStamp = workStore.stamp() } } finally { saveLock.unlock() }
         }
         // Виджеты, напоминания и даты в календаре — один раз после серии изменений.
         sideJob?.cancel()

@@ -9,11 +9,20 @@ import java.io.File
 class WorkStore(private val context: Context) {
     private val file: File get() = File(context.filesDir, "work.json")
 
+    private val bak: File get() = File(context.filesDir, "work.json.bak")
+    private fun decode(f: File): Workspace? = runCatching { json.decodeFromString(Workspace.serializer(), f.readText()) }.getOrNull()
+
+    /** Время последней записи файла — чтобы не перечитывать его без нужды. */
+    fun stamp(): Long = file.lastModified()
+
     fun load(): Workspace {
         val f = file
         if (f.exists()) {
-            return runCatching { json.decodeFromString(Workspace.serializer(), f.readText()) }
-                .getOrElse { Workspace() }
+            decode(f)?.let { return it }
+            // Файл повреждён: сохраняем его копию для разбора и берём предыдущую версию, а не пустые данные.
+            runCatching { f.copyTo(File(context.filesDir, "work.broken-${System.currentTimeMillis()}.json"), overwrite = true) }
+            bak.takeIf { it.exists() }?.let(::decode)?.let { return it }
+            return Workspace()
         }
         val migrated = migrateOldTasks()
         save(migrated)
@@ -24,6 +33,8 @@ class WorkStore(private val context: Context) {
     fun save(w: Workspace) {
         val tmp = File(context.filesDir, "work.json.tmp")
         tmp.writeText(json.encodeToString(Workspace.serializer(), w))
+        // Предыдущая версия — запасная копия на случай сбоя
+        runCatching { if (file.exists() && file.length() > 0) file.copyTo(bak, overwrite = true) }
         if (!tmp.renameTo(file)) {
             file.writeText(tmp.readText())
             tmp.delete()

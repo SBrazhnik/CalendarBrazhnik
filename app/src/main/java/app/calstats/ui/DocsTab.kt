@@ -122,6 +122,12 @@ fun DocsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var view by navView(vm, "docs", DView.DOCS)
     var addSub by remember { mutableStateOf(false) }
     val locked = vm.docsLock && !vm.docsUnlocked
+    // Паспорта и полисы под защитой: нельзя сделать снимок экрана, и не видно в списке недавних приложений.
+    val act = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    if (vm.docsLock) androidx.compose.runtime.DisposableEffect(Unit) {
+        act?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        onDispose { act?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
