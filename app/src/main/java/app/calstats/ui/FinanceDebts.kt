@@ -298,6 +298,7 @@ fun DebtDialog(vm: MainViewModel, d0: Debt, onDismiss: () -> Unit) {
     var date by remember { mutableStateOf(d0.start) }
     var due by remember { mutableStateOf(d0.dueDate) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var newPhone by remember { mutableStateOf("") }
 
     val kop = BankImport.parseAmount(amount) ?: 0
     val r = rate.replace(',', '.').toDoubleOrNull() ?: 0.0
@@ -319,6 +320,10 @@ fun DebtDialog(vm: MainViewModel, d0: Debt, onDismiss: () -> Unit) {
                         FilterChip(selected = partyId == p.id, onClick = { partyId = p.id; newParty = "" }, label = { Text((if (p.company) "🏢 " else "") + p.name) })
                     }
                     people.take(6).forEach { n -> FilterChip(selected = newParty == n, onClick = { newParty = n; partyId = "" }, label = { Text("+ $n") }) }
+                }
+                ContactChip { c ->
+                    val ex = parties.firstOrNull { it.name.equals(c.name, true) || (c.phone.isNotBlank() && it.phone.filter(Char::isDigit).takeLast(10) == c.phone.filter(Char::isDigit).takeLast(10)) }
+                    if (ex != null) { partyId = ex.id; newParty = "" } else { newParty = c.name.ifBlank { c.phone }; newPhone = c.phone; partyId = ""; company = false }
                 }
                 OutlinedTextField(
                     newParty, { newParty = it; if (it.isNotBlank()) partyId = "" },
@@ -376,7 +381,7 @@ fun DebtDialog(vm: MainViewModel, d0: Debt, onDismiss: () -> Unit) {
                         var pid = partyId
                         if (pid.isBlank()) {
                             val existing = ww.counterparties.firstOrNull { it.name.equals(newParty.trim(), true) }
-                            pid = existing?.id ?: newId().also { ww = DebtOps.upsertParty(ww, Counterparty(it, newParty.trim(), company)) }
+                            pid = existing?.id ?: newId().also { ww = DebtOps.upsertParty(ww, Counterparty(it, newParty.trim(), company, phone = newPhone)) }
                         }
                         DebtOps.upsert(
                             ww,
@@ -517,6 +522,7 @@ fun PartyDialog(vm: MainViewModel, p: Counterparty, onDismiss: () -> Unit) {
                     FilterChip(selected = !company, onClick = { company = false }, label = { Text("Человек") })
                     FilterChip(selected = company, onClick = { company = true }, label = { Text("Компания") })
                 }
+                if (!company) ContactChip { c -> if (c.name.isNotBlank()) name = c.name; if (c.phone.isNotBlank()) phone = c.phone }
                 OutlinedTextField(name, { name = it }, label = { Text("Имя / название") }, singleLine = true)
                 OutlinedTextField(phone, { phone = it }, label = { Text("Телефон") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone))

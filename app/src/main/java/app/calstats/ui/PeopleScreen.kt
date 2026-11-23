@@ -137,23 +137,27 @@ fun PeopleScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
         var name by remember(p.id) { mutableStateOf(p.name) }
         var note by remember(p.id) { mutableStateOf(p.note) }
         var color by remember(p.id) { mutableStateOf(p.color) }
+        var phone by remember(p.id) { mutableStateOf(p.phone) }
         val exists = w.people.any { it.id == p.id }
         AlertDialog(
             onDismissRequest = { editPerson = null },
             title = { Text(if (exists) "Человек" else "Новый человек") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ContactChip { c -> if (c.name.isNotBlank()) name = c.name; if (c.phone.isNotBlank()) phone = c.phone }
                     OutlinedTextField(
                         name, { name = it }, label = { Text("Имя") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                     )
                     OutlinedTextField(note, { note = it }, label = { Text("Кто это (необязательно)") }, singleLine = true)
+                    OutlinedTextField(phone, { phone = it }, label = { Text("Телефон") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone))
                     ColorPicker(color) { color = it }
                 }
             },
             confirmButton = {
                 TextButton(enabled = name.isNotBlank(), onClick = {
-                    vm.updateWork { WorkOps.upsertPerson(it, p.copy(name = name.trim(), note = note.trim(), color = color)) }
+                    vm.updateWork { WorkOps.upsertPerson(it, p.copy(name = name.trim(), note = note.trim(), color = color, phone = phone.trim())) }
                     editPerson = null
                 }) { Text("Сохранить") }
             },

@@ -233,7 +233,7 @@ fun IssueScreen(vm: MainViewModel, id: String, snackbar: SnackbarHostState) {
                         var m by remember { mutableStateOf(false) }
                         Box {
                             Box(Modifier.clickable { m = true }) { PersonLine(w.person(issue.assigneeId)) }
-                            PersonMenu(m, w.everyone, true, { m = false }) { p ->
+                            PersonMenu(m, w.everyone, true, { m = false }, vm) { p ->
                                 m = false
                                 save { it.copy(assigneeId = p?.id) }
                             }
@@ -243,7 +243,7 @@ fun IssueScreen(vm: MainViewModel, id: String, snackbar: SnackbarHostState) {
                         var m by remember { mutableStateOf(false) }
                         Box {
                             Box(Modifier.clickable { m = true }) { PersonLine(w.person(issue.reporterId), "—") }
-                            PersonMenu(m, w.everyone, false, { m = false }) { p ->
+                            PersonMenu(m, w.everyone, false, { m = false }, vm) { p ->
                                 m = false
                                 save { it.copy(reporterId = p?.id) }
                             }
@@ -503,7 +503,7 @@ fun IssueScreen(vm: MainViewModel, id: String, snackbar: SnackbarHostState) {
                         OutlinedButton(onClick = { pickDate(ctx, date) { date = it } }) { Text(Fmt.dateNoYear(date)) }
                         Box {
                             OutlinedButton(onClick = { pm = true }) { Text(w.person(person)?.name ?: "?") }
-                            PersonMenu(pm, w.everyone, false, { pm = false }) {
+                            PersonMenu(pm, w.everyone, false, { pm = false }, vm) {
                                 person = it?.id ?: ME
                                 pm = false
                             }

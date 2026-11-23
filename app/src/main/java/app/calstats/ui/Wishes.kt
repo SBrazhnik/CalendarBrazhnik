@@ -249,7 +249,13 @@ private fun WishListDialog(vm: MainViewModel, l: WishList, onDismiss: () -> Unit
                         )
                     }
                 }
-                TextButton(onClick = { vm.push(Screen.People) }) { Text("+ Добавить человека") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ContactChip { c ->
+                        val p = vm.personFromContact(c); owner = p.id
+                        if (title.isBlank()) title = "Подарки для ${p.name}"
+                    }
+                    TextButton(onClick = { vm.push(Screen.People) }) { Text("+ Добавить человека") }
+                }
                 Text("Повод", style = MaterialTheme.typography.titleSmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     OCCASIONS.forEach { o ->
@@ -597,6 +603,7 @@ private fun WishSheet(vm: MainViewModel, x: Wish, onDismiss: () -> Unit) {
                     vm.work.everyone.forEach { p ->
                         FilterChip(selected = reservedBy == p.id, onClick = { reservedBy = if (reservedBy == p.id) null else p.id }, label = { Text(p.name) }, leadingIcon = { Avatar(p, 18.dp) })
                     }
+                    ContactChip(label = "📇 Контакт") { c -> reservedBy = vm.personFromContact(c).id }
                 }
             }
             OutlinedTextField(

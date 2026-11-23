@@ -135,14 +135,19 @@ fun PersonMenu(
     people: List<Person>,
     allowNone: Boolean,
     onDismiss: () -> Unit,
+    vm: app.calstats.MainViewModel? = null,
     onPick: (Person?) -> Unit,
 ) {
+    val pickContact = if (vm != null) rememberContactPicker { c -> onPick(vm.personFromContact(c)) } else null
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         if (allowNone) {
             DropdownMenuItem(text = { Text("Не назначено") }, leadingIcon = { Avatar(null) }, onClick = { onPick(null) })
         }
         people.forEach { p ->
             DropdownMenuItem(text = { Text(p.name) }, leadingIcon = { Avatar(p) }, onClick = { onPick(p) })
+        }
+        if (pickContact != null) {
+            DropdownMenuItem(text = { Text("📇 Из контактов…") }, onClick = { onDismiss(); pickContact() })
         }
     }
 }

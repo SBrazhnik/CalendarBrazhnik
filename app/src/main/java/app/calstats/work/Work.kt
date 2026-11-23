@@ -20,6 +20,7 @@ data class Person(
     val name: String,
     val color: Int,
     val note: String = "",
+    val phone: String = "",
 )
 
 @Serializable

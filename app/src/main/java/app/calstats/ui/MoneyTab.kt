@@ -251,7 +251,10 @@ fun BookDialog(vm: MainViewModel, book: SplitBook?, onDismiss: () -> Unit) {
                         Text(p.name)
                     }
                 }
-                TextButton(onClick = { vm.push(Screen.People) }) { Text("+ Добавить человека") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ContactChip { c -> val p = vm.personFromContact(c); members = members + p.id }
+                    TextButton(onClick = { vm.push(Screen.People) }) { Text("+ Добавить человека") }
+                }
             }
         },
         confirmButton = {

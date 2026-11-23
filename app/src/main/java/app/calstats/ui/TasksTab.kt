@@ -955,7 +955,7 @@ fun CreateIssueSheet(vm: MainViewModel, onDismiss: () -> Unit, parent: Issue? = 
                         Spacer(Modifier.width(6.dp))
                         Text(w.person(assignee)?.name ?: "Не назначено", maxLines = 1)
                     }
-                    PersonMenu(personMenu, w.everyone, true, { personMenu = false }) {
+                    PersonMenu(personMenu, w.everyone, true, { personMenu = false }, vm) {
                         assignee = it?.id
                         personMenu = false
                     }

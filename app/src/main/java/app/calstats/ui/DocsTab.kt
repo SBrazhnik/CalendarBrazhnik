@@ -502,6 +502,7 @@ fun DocEditScreen(vm: MainViewModel, id: String?, snackbar: SnackbarHostState) {
                 .filter { it.isNotBlank() }.distinct()
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 names.take(10).forEach { n -> FilterChip(selected = owner == n, onClick = { owner = if (owner == n) "" else n }, label = { Text(n) }) }
+                ContactChip(label = "📇 Контакт") { c -> owner = c.name.ifBlank { c.phone } }
             }
             OutlinedTextField(owner, { owner = it }, Modifier.fillMaxWidth(), label = { Text("Владелец") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words))
