@@ -526,6 +526,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         saveModules()
     }
 
+    /** Сдвиг среди модулей меню (пропуская выключенные и служебные), чтобы каждое нажатие было заметно. */
+    fun moveInMenu(t: Tab, delta: Int, visible: List<Tab>) {
+        val i = visible.indexOf(t)
+        val target = visible.getOrNull(i + delta) ?: return
+        val list = moduleOrder.toMutableList()
+        val a = list.indexOf(t); val b = list.indexOf(target)
+        if (a < 0 || b < 0) return
+        list[a] = target; list[b] = t
+        moduleOrder = list
+        saveModules()
+    }
+
     private var tabState by mutableStateOf(Tab.HOME)
     /** Текущий модуль. */
     var tab: Tab
@@ -677,6 +689,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         pullTelegram()
         drinks = sobrietyStore.load()
         work = workStore.load()
+        if (Backup.autoDue(getApplication())) backupToFolder()
         DrinkReminder.schedule(getApplication())
         DocsReminder.schedule(getApplication())
         viewModelScope.launch(Dispatchers.IO) { runCatching { Notify.scheduleAll(getApplication()) } }
@@ -1033,35 +1046,71 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- резервная копия ----------
 
-    fun backupFileName(): String = "napravleniya-backup-${LocalDate.now()}.json"
+    fun backupFileName(): String = Backup.fileName()
     fun csvFileName(): String = "napravleniya-sobytiya-${LocalDate.now()}.csv"
+
+    private fun backupJson(): JSONObject {
+        val json = DataStore.toJson(data)
+        json.put("work", JSONObject(WorkStore.json.encodeToString(Workspace.serializer(), work)))
+        json.put("sobriety", sobrietyStore.backupJson())
+        json.put("prefs", Backup.prefsJson(getApplication()))
+        json.put("made", java.time.LocalDateTime.now().toString())
+        return json
+    }
+
+    var backupFolder by mutableStateOf(Backup.folderName(getApplication()))
+        private set
+    var backupLast by mutableStateOf(Backup.lastAuto(getApplication()))
+        private set
+    var backupError by mutableStateOf(Backup.lastError(getApplication()))
+        private set
 
     fun exportBackup(uri: Uri) {
         viewModelScope.launch {
             try {
-                val json = DataStore.toJson(data)
-                json.put("work", JSONObject(WorkStore.json.encodeToString(Workspace.serializer(), work)))
-                json.put("sobriety", sobrietyStore.backupJson())
-                val text = json.toString(2)
-                withContext(Dispatchers.IO) {
-                    resolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                val json = backupJson()
+                val n = withContext(Dispatchers.IO) {
+                    resolver.openOutputStream(uri)?.use { Backup.writeZip(getApplication(), json, it) }
                         ?: error("файл недоступен")
                 }
-                message = "Резервная копия сохранена"
+                message = "Копия сохранена: все модули и $n файлов (фото документов, карт, аватар)"
             } catch (e: Exception) {
                 message = "Не удалось сохранить копию: ${e.message}"
             }
         }
     }
 
+    fun setBackupFolder(tree: Uri?) {
+        try {
+            Backup.setFolder(getApplication(), tree)
+            backupFolder = Backup.folderName(getApplication())
+            if (tree != null) backupToFolder(silent = false)
+        } catch (e: Exception) {
+            message = "Эта папка не даёт постоянного доступа: ${e.message}. Выберите папку Яндекс Диска или память телефона"
+        }
+    }
+
+    fun backupToFolder(silent: Boolean = true) {
+        viewModelScope.launch {
+            try {
+                val json = backupJson()
+                val name = withContext(Dispatchers.IO) { Backup.writeToFolder(getApplication(), json) }
+                if (!silent) message = "Копия $name сохранена в «$backupFolder»"
+            } catch (e: Exception) {
+                if (!silent) message = "Не удалось сохранить в папку: ${e.message}"
+            }
+            backupLast = Backup.lastAuto(getApplication())
+            backupError = Backup.lastError(getApplication())
+        }
+    }
+
     fun importBackup(uri: Uri) {
         viewModelScope.launch {
             try {
-                val text = withContext(Dispatchers.IO) {
-                    resolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                val json = withContext(Dispatchers.IO) {
+                    resolver.openInputStream(uri)?.use { Backup.read(getApplication(), it) }
                         ?: error("файл недоступен")
                 }
-                val json = JSONObject(text)
                 if (json.optString("app") != DataStore.APP_MARK) {
                     message = "Это не файл резервной копии этого приложения"
                     return@launch
@@ -1079,8 +1128,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     reminderTime = sobrietyStore.reminderTime
                     DrinkReminder.schedule(getApplication())
                 }
+                val prefs = json.optJSONObject("prefs")
+                prefs?.let { Backup.restorePrefs(getApplication(), it) }
                 message = "Восстановлено: направлений ${restored.directions.values.count { it.name.isNotBlank() }}" +
-                    (restoredWork?.let { ", задач ${it.issues.size}, расходов ${it.expenses.size}" } ?: "")
+                    (restoredWork?.let { ", задач ${it.issues.size}, расходов ${it.expenses.size}, карт ${it.cards.size}" } ?: "") +
+                    (if (prefs != null) ". Перезапустите приложение, чтобы применились настройки" else "")
             } catch (e: Exception) {
                 message = "Не удалось восстановить: ${e.message}"
             }

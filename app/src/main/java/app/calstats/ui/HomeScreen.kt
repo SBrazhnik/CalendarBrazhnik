@@ -1,5 +1,11 @@
 package app.calstats.ui
 
+import androidx.compose.ui.draw.scale
+
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -171,9 +177,42 @@ private fun AppDrawer(vm: MainViewModel, drawer: DrawerState) {
             }
             Spacer(Modifier.height(6.dp))
             DrawerItem({ ModuleIcon(Tab.HOME, vm.tab == Tab.HOME, 22.dp) }, "Главная", vm.tab == Tab.HOME) { go { vm.tab = Tab.HOME } }
-            DrawerDivider()
-            vm.enabledModules.filter { it != Tab.ACCOUNTS && it != Tab.GUIDE }.forEach { t ->
-                DrawerItem({ ModuleIcon(t, false, 22.dp) }, t.title, vm.tab == t) { go { vm.tab = t } }
+            var editMenu by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+            Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("МОДУЛИ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                androidx.compose.material3.TextButton(onClick = { editMenu = !editMenu }) {
+                    Text(if (editMenu) "Готово" else "Порядок", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            if (editMenu) {
+                val all = vm.moduleOrder.filter { it != Tab.HOME && it != Tab.ACCOUNTS && it != Tab.GUIDE }
+                val shown = all.filter { vm.isEnabled(it) }
+                Text(
+                    "Стрелками меняйте порядок, переключателем — показывать ли модуль.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                )
+                (shown + all.filter { !vm.isEnabled(it) }).forEach { t ->
+                    val on = vm.isEnabled(t)
+                    val i = shown.indexOf(t)
+                    Row(Modifier.fillMaxWidth().height(48.dp).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.alpha(if (on) 1f else 0.4f)) { ModuleIcon(t, false, 20.dp) }
+                        Spacer(Modifier.width(10.dp))
+                        Text(t.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        androidx.compose.material3.IconButton(onClick = { vm.moveInMenu(t, -1, shown) }, enabled = on && i > 0, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.KeyboardArrowUp, "Выше")
+                        }
+                        androidx.compose.material3.IconButton(onClick = { vm.moveInMenu(t, 1, shown) }, enabled = on && i in 0 until shown.lastIndex, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.KeyboardArrowDown, "Ниже")
+                        }
+                        androidx.compose.material3.Switch(checked = on, onCheckedChange = { vm.setModuleEnabled(t, it) }, modifier = Modifier.scale(0.75f))
+                    }
+                }
+            } else {
+                vm.enabledModules.filter { it != Tab.ACCOUNTS && it != Tab.GUIDE && it != Tab.HOME }.forEach { t ->
+                    DrawerItem({ ModuleIcon(t, false, 22.dp) }, t.title, vm.tab == t) { go { vm.tab = t } }
+                }
             }
             DrawerDivider()
             if (vm.isEnabled(Tab.ACCOUNTS)) {

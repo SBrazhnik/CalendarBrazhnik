@@ -152,15 +152,12 @@ private val ForestScheme = darkColorScheme(
     error = Color(0xFFFF8A80),
 )
 
-/** Шрифты corpdance: Golos Text — текст, Cormorant Unicase — заголовки и крупные цифры, Marck Script — рукописные подписи. */
-val Golos = FontFamily(
-    Font(R.font.golos_text, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
-    Font(R.font.golos_text, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
-    Font(R.font.golos_text, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
-    Font(R.font.golos_text, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
-)
-val DisplayFont = FontFamily(Font(R.font.cormorant_unicase_medium, FontWeight.Medium))
-val ScriptFont = FontFamily(Font(R.font.marck_script, FontWeight.Normal))
+/** Шрифты: Inter — основной текст (максимально читаемый), Manrope — заголовки и крупные цифры (строгий, плотный). */
+private fun vf(res: Int, w: Int) = Font(res, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+val Golos = FontFamily(vf(R.font.inter, 400), vf(R.font.inter, 500), vf(R.font.inter, 600), vf(R.font.inter, 700))
+val DisplayFont = FontFamily(vf(R.font.manrope, 600), vf(R.font.manrope, 700), vf(R.font.manrope, 800))
+/** Подписи под заголовками — тем же строгим шрифтом, без рукописного. */
+val ScriptFont = FontFamily(vf(R.font.inter, 400), vf(R.font.inter, 500))
 
 /** Тёмная ли выбранная тема (для строки состояния и фона заметок). */
 @Composable
@@ -187,7 +184,7 @@ fun AppTheme(mode: app.calstats.ThemeMode = app.calstats.ThemeMode.SYSTEM, conte
     )
     val base = Typography()
     fun TextStyle.g(w: FontWeight? = null) = copy(fontFamily = Golos, fontWeight = w ?: fontWeight)
-    fun TextStyle.d(size: Int) = copy(fontFamily = DisplayFont, fontWeight = FontWeight.Medium, fontSize = size.sp, lineHeight = (size * 1.08f).sp, letterSpacing = 0.sp)
+    fun TextStyle.d(size: Int) = copy(fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = (size * 0.8f).sp, lineHeight = (size * 0.96f).sp, letterSpacing = (-0.5).sp)
     val typography = Typography(
         displayLarge = base.displayLarge.d(52),
         displayMedium = base.displayMedium.d(44),

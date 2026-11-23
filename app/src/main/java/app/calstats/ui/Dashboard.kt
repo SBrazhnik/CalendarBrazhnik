@@ -138,7 +138,7 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     Text("Главная", style = MaterialTheme.typography.displaySmall)
                     Text(
                         "✦ " + Fmt.dayTitle(vm.today, vm.today).replaceFirstChar { it.lowercase() } + " · " + greeting.lowercase() + (name?.let { ", $it" } ?: ""),
-                        style = MaterialTheme.typography.titleLarge.copy(fontFamily = ScriptFont, fontWeight = FontWeight.Normal),
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

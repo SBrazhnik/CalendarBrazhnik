@@ -114,6 +114,7 @@ fun AnalysisTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 if (vm.drinks.isNotEmpty()) {
                     item { SobrietyCard(vm) }
                 }
+                item(key = "modules") { ModulesAnalysis(vm) }
                 if (unnamed > 0) {
                     item {
                         Card(

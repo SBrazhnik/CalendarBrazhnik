@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 
 package app.calstats.ui
 
@@ -75,20 +75,24 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     }
     val notifAllowed = remember(permTick, vm.now) { DrinkReminder.canNotify(ctx) }
 
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.exportBackup(uri)
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) pendingRestore = uri
     }
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) vm.setBackupFolder(uri)
+    }
     val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) vm.exportCsv(uri)
     }
 
+    var settingsTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Настройки") },
+                title = { Text("Настройки", style = MaterialTheme.typography.headlineSmall) },
                 navigationIcon = {
                     IconButton(onClick = { vm.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
                 },
@@ -104,45 +108,63 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Section("Оформление") {
+          androidx.compose.runtime.CompositionLocalProvider(LocalSettingsTab provides settingsTab) {
+            // Тема — сверху, как на corpdance: карточки-превью.
+            Text("Тема", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 app.calstats.ThemeMode.entries.forEach { t ->
                     val sw = when (t) {
-                        app.calstats.ThemeMode.SYSTEM -> listOf(0xFFF3F2F7, 0xFF121721, 0xFF0C1913, 0xFFD4A960)
-                        app.calstats.ThemeMode.LIGHT -> listOf(0xFFF3F2F7, 0xFFFFFFFF, 0xFF121721, 0xFF7C5CE6)
-                        app.calstats.ThemeMode.DARK -> listOf(0xFF121721, 0xFF1D222A, 0xFFC9B8FF, 0xFF3F3561)
-                        app.calstats.ThemeMode.FOREST -> listOf(0xFF0C1913, 0xFF172A20, 0xFFD4A960, 0xFFEDE6D6)
+                        app.calstats.ThemeMode.SYSTEM -> listOf(0xFFF3F2F7, 0xFF0C1913, 0xFFD4A960)
+                        app.calstats.ThemeMode.LIGHT -> listOf(0xFFF3F2F7, 0xFFFFFFFF, 0xFF121721)
+                        app.calstats.ThemeMode.DARK -> listOf(0xFF121721, 0xFF1D222A, 0xFFC9B8FF)
+                        app.calstats.ThemeMode.FOREST -> listOf(0xFF0C1913, 0xFF172A20, 0xFFD4A960)
                     }
                     val selected = vm.themeMode == t
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
+                    Column(
+                        Modifier.weight(1f)
                             .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
-                            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+                            .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
                             .clickable { vm.changeTheme(t) }
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .padding(6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Row {
-                            sw.forEach { c ->
-                                androidx.compose.foundation.layout.Box(
-                                    Modifier
-                                        .size(22.dp)
-                                        .clip(androidx.compose.foundation.shape.CircleShape)
-                                        .background(androidx.compose.ui.graphics.Color(c))
-                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.CircleShape),
-                                )
-                                Spacer(Modifier.width(2.dp))
+                        // Мини-превью экрана: фон, карточка, акцент
+                        Box(
+                            Modifier.fillMaxWidth().height(54.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                .background(androidx.compose.ui.graphics.Color(sw[0])).padding(6.dp),
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Box(Modifier.fillMaxWidth().height(16.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).background(androidx.compose.ui.graphics.Color(sw[1])))
+                                Box(Modifier.width(26.dp).height(8.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).background(androidx.compose.ui.graphics.Color(sw[2])))
                             }
                         }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(t.title, style = MaterialTheme.typography.titleSmall)
-                            Text(t.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        androidx.compose.material3.RadioButton(selected = selected, onClick = { vm.changeTheme(t) })
+                        Spacer(Modifier.height(4.dp))
+                        Text(if (t == app.calstats.ThemeMode.SYSTEM) "Авто" else t.title, style = MaterialTheme.typography.labelMedium, maxLines = 1, fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else null)
                     }
                 }
             }
+            // Разделы — сеткой «пилюль», ниже содержимое выбранного (как на corpdance).
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                maxItemsInEachRow = 2,
+            ) {
+                SETTINGS_TABS.forEachIndexed { i, title ->
+                    val sel = settingsTab == i
+                    Box(
+                        Modifier.weight(1f).height(44.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .background(if (sel) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .clickable { settingsTab = i },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(title, style = MaterialTheme.typography.labelLarge, color = if (sel) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
             Section("Модули") {
                 Text(
@@ -373,18 +395,48 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
 
             Section("Резервная копия") {
                 Text(
-                    "Сами события хранятся в Google Календаре: на новом телефоне они появятся после входа " +
-                        "в тот же аккаунт Google. Задачи, расходы, желания, заметки, названия направлений и настройки Android автоматически " +
-                        "сохраняет в резервную копию на Google Диске. Дополнительно можно сохранить их в файл.",
+                    "В копию попадает всё: направления и цвета, все модули (задачи, финансы, долги, здоровье, привычки, " +
+                        "документы, карты, покупки, цели, дневник, авто, питомцы), настройки главной и меню, " +
+                        "а также фото документов, бонусных карт и аватар. Один файл .zip. Токен Telegram-бота не сохраняется. " +
+                        "События остаются в Google Календаре.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Button(onClick = { exportLauncher.launch(vm.backupFileName()) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Сохранить копию в файл")
+                    Text("Сохранить копию…")
                 }
+                Text(
+                    "В окне выбора слева в меню будут «Google Диск» и «Яндекс Диск» (если приложения установлены) — выберите нужную папку там.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 OutlinedButton(
-                    onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                    onClick = { importLauncher.launch(arrayOf("application/zip", "application/json", "text/plain", "application/octet-stream")) },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Восстановить из файла") }
+                ) { Text("Восстановить из копии (.zip или старый .json)") }
+                HorizontalDivider()
+                Text("Автокопия раз в день", style = MaterialTheme.typography.titleSmall)
+                val folder = vm.backupFolder
+                if (folder == null) {
+                    Text(
+                        "Выберите папку — приложение будет само сохранять туда копию раз в сутки и хранить последние ${app.calstats.Backup.KEEP}. " +
+                            "Работает с Яндекс Диском, памятью телефона и картой памяти. Google Диск постоянный доступ к папке не даёт — " +
+                            "для него сохраняйте копию кнопкой выше.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(onClick = { folderLauncher.launch(null) }, modifier = Modifier.fillMaxWidth()) { Text("Выбрать папку для автокопии") }
+                } else {
+                    val last = vm.backupLast
+                    Text(
+                        "Папка: $folder\n" + (if (last > 0) "Последняя копия: " + java.time.Instant.ofEpochMilli(last).atZone(java.time.ZoneId.systemDefault())
+                            .format(java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm", java.util.Locale.forLanguageTag("ru"))) else "Копий ещё не было") +
+                            (vm.backupError?.let { "\nОшибка: $it" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { vm.backupToFolder(silent = false) }, modifier = Modifier.weight(1f)) { Text("Сейчас") }
+                        OutlinedButton(onClick = { folderLauncher.launch(null) }, modifier = Modifier.weight(1f)) { Text("Сменить") }
+                        TextButton(onClick = { vm.setBackupFolder(null) }) { Text("Откл.") }
+                    }
+                }
                 HorizontalDivider()
                 Text(
                     "Выгрузка всех событий с направлениями в таблицу (открывается в Excel и Google Таблицах):",
@@ -395,6 +447,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
             Spacer(Modifier.height(24.dp))
+          }
         }
     }
 
@@ -414,9 +467,17 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     }
 }
 
+private val SETTINGS_TABS = listOf("Общие", "Уведомления", "Календарь", "Резервные копии")
+private val SECTION_TAB = mapOf(
+    "Модули" to 0, "Синхронизация с Google" to 2, "Какие календари считать" to 2, "Подсчёт" to 2,
+    "Даты из модулей в календаре" to 2, "Уведомления" to 1, "Учёт алкоголя" to 1, "Резервная копия" to 3,
+)
+private val LocalSettingsTab = androidx.compose.runtime.compositionLocalOf { 0 }
+
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    if ((SECTION_TAB[title] ?: 0) != LocalSettingsTab.current) return
+    Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             content()
