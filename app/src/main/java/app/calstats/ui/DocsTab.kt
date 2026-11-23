@@ -119,7 +119,7 @@ private val EXP_C = Color(0xFFB04A3F)
 /** Модуль «Документы и подписки». */
 @Composable
 fun DocsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
-    var view by rememberSaveable { mutableStateOf(DView.DOCS) }
+    var view by navView(vm, "docs", DView.DOCS)
     var addSub by remember { mutableStateOf(false) }
     val locked = vm.docsLock && !vm.docsUnlocked
 

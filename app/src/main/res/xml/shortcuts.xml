@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="q_voice" android:enabled="true" android:icon="@drawable/sc_mic"
+        android:shortcutShortLabel="@string/sc_voice_s" android:shortcutLongLabel="@string/sc_voice_l">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="app.calstats.brazhnik" android:targetClass="app.calstats.MainActivity">
+            <extra android:name="quick" android:value="voice" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="q_text" android:enabled="true" android:icon="@drawable/sc_edit"
+        android:shortcutShortLabel="@string/sc_text_s" android:shortcutLongLabel="@string/sc_text_l">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="app.calstats.brazhnik" android:targetClass="app.calstats.MainActivity">
+            <extra android:name="quick" android:value="text" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="q_water" android:enabled="true" android:icon="@drawable/sc_water"
+        android:shortcutShortLabel="@string/sc_water_s" android:shortcutLongLabel="@string/sc_water_l">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="app.calstats.brazhnik" android:targetClass="app.calstats.MainActivity">
+            <extra android:name="quick" android:value="water" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="q_cards" android:enabled="true" android:icon="@drawable/sc_card"
+        android:shortcutShortLabel="@string/sc_cards_s" android:shortcutLongLabel="@string/sc_cards_l">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="app.calstats.brazhnik" android:targetClass="app.calstats.MainActivity">
+            <extra android:name="quick" android:value="cards" />
+        </intent>
+    </shortcut>
+</shortcuts>

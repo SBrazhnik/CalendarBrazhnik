@@ -3,4 +3,13 @@
     <string name="widget_description">Месяц с событиями и отметками</string>
     <string name="tasks_widget_description">Ваши открытые задачи с отметкой выполнения</string>
     <string name="today_widget_description">Привычки и вода на сегодня — отметить с рабочего стола</string>
+    <string name="sc_voice_s">Сказать</string>
+    <string name="sc_voice_l">Записать голосом</string>
+    <string name="sc_text_s">Записать</string>
+    <string name="sc_text_l">Быстрая запись</string>
+    <string name="sc_water_s">Вода +250</string>
+    <string name="sc_water_l">Выпил стакан воды</string>
+    <string name="sc_cards_s">Карты</string>
+    <string name="sc_cards_l">Бонусные карты</string>
+    <string name="tile_quick">Быстрая запись</string>
 </resources>

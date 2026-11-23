@@ -144,7 +144,7 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
             if (!vm.editHome) item { MyDayCard(vm) }
-            if (!vm.editHome) item { QuickActions(vm) { txSheet = it } }
+            if (!vm.editHome) item { Column { QuickActions(vm) { txSheet = it } } }
             if (!vm.editHome && (vm.today.dayOfWeek.value >= 6 || vm.today.dayOfWeek.value == 1)) item { WeekSummaryCard(vm) }
             if (vm.editHome) {
                 item {
@@ -814,7 +814,31 @@ private fun QuickActions(vm: MainViewModel, onTx: (app.calstats.work.Transaction
             vm.push(Screen.NoteEdit(n.id))
         })
     }
+    // Строка быстрой записи: голосом или текстом — всё разберётся само
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(24.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .clickable { vm.quickInput = false }.padding(start = 18.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Записать: трату, задачу, воду…", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
+            Box(
+                Modifier.size(38.dp).clip(RoundedCornerShape(19.dp)).background(MaterialTheme.colorScheme.primary).clickable { vm.quickInput = true },
+                contentAlignment = Alignment.Center,
+            ) { Icon(painterResource(app.calstats.R.drawable.ic_mic_tile), "Голосом", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimary) }
+        }
+        if (java.time.LocalTime.now().hour >= 18) {
+            Box(
+                Modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.secondaryContainer)
+                    .clickable { vm.checkIn = true }.padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("🌙 Итог дня", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer) }
+        }
+    }
     if (actions.isEmpty()) return
+    Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         actions.forEach { a ->
             Card(

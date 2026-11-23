@@ -121,7 +121,7 @@ private val SLEEP = Color(0xFF6C4F7A)
 /** Модуль «Здоровье и питание». */
 @Composable
 fun HealthTab(vm: MainViewModel, snackbar: SnackbarHostState) {
-    var view by rememberSaveable { mutableStateOf(HView.TODAY) }
+    var view by navView(vm, "health", HView.TODAY)
     var foodFor by remember { mutableStateOf<Pair<LocalDate, Meal>?>(null) }
     var weightDialog by remember { mutableStateOf(false) }
     var day by remember { mutableStateOf(vm.today) }

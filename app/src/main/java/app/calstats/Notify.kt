@@ -181,13 +181,13 @@ object Notify {
         }
     }
 
-    private fun post(ctx: Context, channel: String, id: Int, title: String, lines: List<String>, tab: Tab? = null) {
+    private fun post(ctx: Context, channel: String, id: Int, title: String, lines: List<String>, tab: Tab? = null, quick: String? = null) {
         if (!DrinkReminder.canNotify(ctx)) return
         channels(ctx)
         val open = PendingIntent.getActivity(
             ctx, 600 + id % 100,
             Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                .also { i -> tab?.let { i.putExtra(MainActivity.EXTRA_TAB, it.name) } },
+                .also { i -> tab?.let { i.putExtra(MainActivity.EXTRA_TAB, it.name) }; quick?.let { i.putExtra(MainActivity.EXTRA_QUICK, it) } },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = NotificationCompat.Builder(ctx, channel)
@@ -267,8 +267,9 @@ object Notify {
                 scheduleAll(ctx)
             }
             ACTION_EVENING -> {
-                val lines = eveningLines(ctx, today)
-                if (lines.isNotEmpty()) post(ctx, CH_DAY, 4502, "🌙 Перед сном", lines, Tab.HOME)
+                // «Итог дня»: приходит всегда — за минуту отметить настроение, привычки, траты и запись в дневник.
+                val lines = listOf("Нажмите — итог дня за минуту: настроение, привычки, траты, дневник") + eveningLines(ctx, today)
+                post(ctx, CH_DAY, 4502, "🌙 Итог дня", lines, Tab.HOME, quick = "checkin")
                 scheduleAll(ctx)
             }
             ACTION_RESCAN -> scheduleEvents(ctx)

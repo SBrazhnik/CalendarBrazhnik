@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         /** Открыть модуль из уведомления. */
         const val EXTRA_TAB = "tab"
+        const val EXTRA_QUICK = "quick"
     }
 
     private val vm: MainViewModel by viewModels()
@@ -83,6 +84,18 @@ class MainActivity : ComponentActivity() {
                 return
             }
         }
+        intent?.getStringExtra(EXTRA_QUICK)?.let { q ->
+            intent.removeExtra(EXTRA_QUICK)
+            vm.stack.clear(); vm.stack.add(Screen.Main)
+            when (q) {
+                "voice" -> vm.quickInput = true
+                "text" -> vm.quickInput = false
+                "checkin" -> vm.checkIn = true
+                "water" -> vm.message = "✓ " + vm.applySmart(app.calstats.work.SmartInput.Result(app.calstats.work.SmartInput.Kind.WATER, "250 мл", ml = 250))
+                "cards" -> { if (!vm.isEnabled(Tab.CARDS)) vm.setModuleEnabled(Tab.CARDS, true); vm.tab = Tab.CARDS }
+            }
+            return
+        }
         intent?.getStringExtra(EXTRA_TAB)?.let { t ->
             Tab.entries.firstOrNull { it.name == t }?.takeIf { vm.isEnabled(it) }?.let { vm.stack.clear(); vm.stack.add(Screen.Main); vm.tab = it }
         }
@@ -134,6 +147,8 @@ fun App(vm: MainViewModel) {
 
     vm.incoming?.let { IncomingDialog(vm, it) }
     if (vm.quickEvent) app.calstats.ui.QuickEventDialog(vm)
+    vm.quickInput?.let { app.calstats.ui.QuickInputSheet(vm, it) }
+    if (vm.checkIn) app.calstats.ui.CheckInSheet(vm)
     vm.focus?.let { app.calstats.ui.FocusDialog(vm, it) }
     if (!vm.whatsNewChecked && vm.stack.size == 1) app.calstats.ui.WhatsNewDialog(vm)
 

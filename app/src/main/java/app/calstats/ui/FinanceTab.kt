@@ -127,7 +127,7 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { if (vm.work.finCategories.isEmpty()) vm.updateWork { FinanceOps.ensureDefaults(it) } }
     val w = vm.work
-    var view by rememberSaveable { mutableStateOf("OVERVIEW") }
+    var view by navView(vm, "fin", "OVERVIEW")
     var month by remember { mutableStateOf(YearMonth.now()) }
     var txSheet by remember { mutableStateOf<Transaction?>(null) }
     var accountDialog by remember { mutableStateOf<Account?>(null) }

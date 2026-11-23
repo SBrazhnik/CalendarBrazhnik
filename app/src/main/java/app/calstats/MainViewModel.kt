@@ -49,7 +49,7 @@ enum class CalView(val title: String, val days: Int) {
 }
 
 /** Снимок состояния модулей — для жеста «назад». */
-data class NavSnap(val tab: Tab, val calView: CalView, val taskView: String, val projectId: String?)
+data class NavSnap(val tab: Tab, val calView: CalView, val taskView: String, val projectId: String?, val sub: Map<String, Any?> = emptyMap())
 
 /**
  * Главная и модули приложения. Новый модуль = новая строка здесь + его экран;
@@ -166,7 +166,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** История переходов между модулями и видами: «назад» возвращает к предыдущему. */
     private val navHistory = mutableListOf<NavSnap>()
     private var restoring = false
-    private fun snap() = NavSnap(tabState, calViewState, taskViewState, projectState)
+    private fun snap() = NavSnap(tabState, calViewState, taskViewState, projectState, subViews.toMap())
+
+    /** Внутренние вкладки модулей (Обзор/Долги, Сегодня/История…) — тоже попадают в историю «назад». */
+    val subViews = androidx.compose.runtime.mutableStateMapOf<String, Any?>()
+    fun setSubView(key: String, v: Any?) {
+        if (subViews[key] == v) return
+        val before = snap()
+        subViews[key] = v
+        record(before)
+    }
     private fun record(before: NavSnap) {
         if (restoring || before == snap()) return
         navHistory += before
@@ -322,6 +331,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var tileSettings by mutableStateOf<Tab?>(null)
     /** Окно «Событие текстом». */
     var quickEvent by mutableStateOf(false)
+    /** Быстрая запись: null — закрыта, false — текстом, true — сразу голосом. */
+    var quickInput by mutableStateOf<Boolean?>(null)
+    /** Вечерний «Итог дня». */
+    var checkIn by mutableStateOf(false)
     var loanCalc by mutableStateOf(false)
     /** Карта, пришедшая из файла .pkpass или «Поделиться», — откроется в модуле «Карты». */
     var pendingCard by mutableStateOf<app.calstats.work.LoyaltyCard?>(null)
@@ -476,6 +489,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             var n = 0
             msgs.forEach { m ->
                 val cmd = TelegramBot.parseCommand(m)
+                // «выпил 2 стакана воды», «кофе 250 руб», «купить хлеб», «вес 80» — тот же разбор, что и в быстрой записи
+                val smart = app.calstats.work.SmartInput.parse(m, java.time.LocalDateTime.now(), work.habits)
+                if (cmd.kind == TelegramBot.Kind.NOTE && smart != null && smart.kind !in setOf(
+                        app.calstats.work.SmartInput.Kind.TASK, app.calstats.work.SmartInput.Kind.EVENT, app.calstats.work.SmartInput.Kind.NOTE,
+                    ) && runCatching { applySmart(smart) }.isSuccess) { n++; return@forEach }
                 when (cmd.kind) {
                     TelegramBot.Kind.TASK -> { incoming = SharedText(cmd.text, null, "Telegram"); saveIncomingAsTask(false) }
                     TelegramBot.Kind.NOTE -> { incoming = SharedText(cmd.text, null, "Telegram"); saveIncomingAsNote(false) }
@@ -562,12 +580,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** «Назад» на главном экране: true — вернулись к предыдущему виду, false — истории нет. */
     fun navigateBack(): Boolean {
-        val last = navHistory.removeLastOrNull() ?: return false
+        val last = navHistory.removeLastOrNull()
+        if (last == null) {
+            // Истории нет (открыли из виджета/уведомления) — сначала на Главную, потом уже выход.
+            if (tabState == Tab.HOME) return false
+            restoring = true; tabState = Tab.HOME; restoring = false
+            return true
+        }
         restoring = true
         tabState = last.tab
         calViewState = last.calView
         taskViewState = last.taskView
         projectState = last.projectId
+        subViews.clear(); subViews.putAll(last.sub)
         restoring = false
         return true
     }
@@ -725,6 +750,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         observer?.let { resolver.unregisterContentObserver(it) }
+        // Не теряем последнее изменение, если система закрывает экран.
+        runCatching { kotlinx.coroutines.runBlocking { saveLock.lock(); try { workStore.save(work) } finally { saveLock.unlock() } } }
         super.onCleared()
     }
 
@@ -907,18 +934,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- задачи, проекты, люди, расходы ----------
 
     /** Любое изменение рабочего пространства: сохраняем в файл и обновляем виджеты. */
+    private val saveLock = kotlinx.coroutines.sync.Mutex()
+    private var sideJob: kotlinx.coroutines.Job? = null
+
     fun updateWork(transform: (Workspace) -> Workspace) {
         val w = transform(work)
         work = w
+        // Запись по очереди и только самой свежей версии: быстрые нажатия (вода, привычки)
+        // больше не пишут файл параллельно и не могут затереть новое старым.
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { workStore.save(w) }
-            TasksWidget.refresh(getApplication())
-            app.calstats.widget.TodayWidget.refresh(getApplication())
-            runCatching { Notify.scheduleHabits(getApplication(), w) }
-            runCatching { Notify.scheduleMeds(getApplication(), w) }
-            exportDates(w)
+            saveLock.lock()
+            try { if (work === w) runCatching { workStore.save(w) } } finally { saveLock.unlock() }
+        }
+        // Виджеты, напоминания и даты в календаре — один раз после серии изменений.
+        sideJob?.cancel()
+        sideJob = viewModelScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(700)
+            val cur = work
+            runCatching { TasksWidget.refresh(getApplication()) }
+            runCatching { app.calstats.widget.TodayWidget.refresh(getApplication()) }
+            runCatching { Notify.scheduleHabits(getApplication(), cur) }
+            runCatching { Notify.scheduleMeds(getApplication(), cur) }
+            exportDates(cur)
         }
     }
+
+
 
     /** Пришло из «Поделиться» — ждёт выбора, куда сохранить. */
     var incoming by mutableStateOf<SharedText?>(null)
