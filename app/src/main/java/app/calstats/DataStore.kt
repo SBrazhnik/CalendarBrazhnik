@@ -38,12 +38,25 @@ class DataStore(context: Context) {
                         put("color", colorToHex(s.color))
                         put("name", s.name)
                         put("hidden", s.hidden)
+                        s.display?.let { put("display", colorToHex(it)) }
                     })
                 }
             })
             put("excludedCalendars", JSONArray().apply { d.excludedCalendars.sorted().forEach { put(it) } })
             put("includeFuture", d.includeFuture)
             d.lastCalendarKey?.let { put("lastCalendarKey", it) }
+            put("custom", JSONArray().apply {
+                d.custom.forEach { c ->
+                    put(JSONObject().apply {
+                        put("id", c.id)
+                        put("name", c.name)
+                        put("display", colorToHex(c.display))
+                        c.eventColor?.let { put("eventColor", colorToHex(it)) }
+                        put("keywords", JSONArray().apply { c.keywords.forEach { put(it) } })
+                        put("hidden", c.hidden)
+                    })
+                }
+            })
         }
 
         fun fromJson(o: JSONObject): AppData {
@@ -52,14 +65,29 @@ class DataStore(context: Context) {
                 for (i in 0 until arr.length()) {
                     val item = arr.getJSONObject(i)
                     val color = hexToColor(item.getString("color"))
-                    dirs[color] = DirectionSetting(color, item.optString("name", ""), item.optBoolean("hidden", false))
+                    dirs[color] = DirectionSetting(
+                        color, item.optString("name", ""), item.optBoolean("hidden", false),
+                        item.optString("display", "").takeIf { it.isNotEmpty() }?.let { hexToColor(it) },
+                    )
                 }
             }
             val excluded = HashSet<String>()
             o.optJSONArray("excludedCalendars")?.let { arr ->
                 for (i in 0 until arr.length()) excluded += arr.getString(i)
             }
+            val custom = ArrayList<CustomDirection>()
+            o.optJSONArray("custom")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val c = arr.getJSONObject(i)
+                    val kw = c.optJSONArray("keywords")?.let { k -> (0 until k.length()).map { k.getString(it) } }.orEmpty()
+                    custom += CustomDirection(
+                        c.getString("id"), c.optString("name", ""), hexToColor(c.getString("display")),
+                        c.optString("eventColor", "").takeIf { it.isNotEmpty() }?.let { hexToColor(it) }, kw, c.optBoolean("hidden", false),
+                    )
+                }
+            }
             return AppData(
+                custom = custom,
                 directions = dirs,
                 excludedCalendars = excluded,
                 includeFuture = o.optBoolean("includeFuture", false),

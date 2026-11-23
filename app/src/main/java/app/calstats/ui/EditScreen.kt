@@ -354,7 +354,7 @@ fun EditScreen(vm: MainViewModel, screen: Screen.Edit, snackbar: SnackbarHostSta
                 ) {
                     ColorOption(cal.color, vm.directionName(cal.color) ?: "Цвет календаря", colorKey == null) { colorKey = null }
                     sorted.forEach { o ->
-                        ColorOption(o.color, vm.directionName(o.color) ?: "без названия", colorKey == o.key) { colorKey = o.key }
+                        ColorOption(vm.directionDisplay(o.color), vm.directionName(o.color) ?: "без названия", colorKey == o.key) { colorKey = o.key }
                     }
                 }
             }

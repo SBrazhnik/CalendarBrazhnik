@@ -748,7 +748,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun calendarById(id: Long): CalendarInfo? = calendars.firstOrNull { it.id == id }
 
     fun directionName(color: Int): String? =
-        data.directions[color]?.name?.trim()?.takeIf { it.isNotEmpty() }
+        data.custom.firstOrNull { it.eventColor == color }?.name?.trim()?.takeIf { it.isNotEmpty() }
+            ?: data.directions[color]?.name?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** Цвет для показа: свой цвет направления, если задан. */
+    fun directionDisplay(color: Int): Int =
+        data.custom.firstOrNull { it.eventColor == color }?.display ?: data.directions[color]?.display ?: color
+
+    fun upsertCustomDirection(c: CustomDirection) =
+        update(data.copy(custom = if (data.custom.any { it.id == c.id }) data.custom.map { if (it.id == c.id) c else it } else data.custom + c))
+
+    fun deleteCustomDirection(id: String) = update(data.copy(custom = data.custom.filter { it.id != id }))
+
+    fun setDirectionDisplay(color: Int, display: Int?) {
+        val cur = data.directions[color] ?: DirectionSetting(color, "")
+        update(data.copy(directions = data.directions + (color to cur.copy(display = display))))
+    }
 
     // ---------- направления и настройки ----------
 

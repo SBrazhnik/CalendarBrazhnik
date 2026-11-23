@@ -101,11 +101,26 @@ object Stats {
         val colorCounts = HashMap<String, HashMap<Int, Int>>()
         val names = HashMap<String, String>()
         val seen = HashSet<String>()
+        val display = HashMap<String, Int>()
         for (i in instances) {
             if (i.calendarId !in includedCalendarIds) continue
+            // Свои направления — по словам в названии или по цвету Google.
+            val cd = data.custom.firstOrNull { c -> c.keywords.any { it.isNotBlank() && i.title.contains(it.trim(), true) } }
+                ?: data.custom.firstOrNull { it.eventColor == i.color }
+            if (cd != null) {
+                if (cd.hidden) continue
+                val key = "x:" + cd.id
+                if (!seen.add("$key|${i.title.trim().lowercase()}|${i.begin}|${i.end}|${i.allDay}")) continue
+                lists.getOrPut(key) { mutableListOf() } += i
+                colorCounts.getOrPut(key) { HashMap() }.let { it[i.color] = (it[i.color] ?: 0) + 1 }
+                names[key] = cd.name
+                display[key] = cd.display
+                continue
+            }
             val s = data.directions[i.color]
             if (s?.hidden == true) continue
             val key = groupKey(i.color, s)
+            s?.display?.let { display[key] = it }
             // Одно и то же событие в двух календарях (например, Google и Samsung) считаем один раз.
             if (!seen.add("$key|${i.title.trim().lowercase()}|${i.begin}|${i.end}|${i.allDay}")) continue
             lists.getOrPut(key) { mutableListOf() } += i
@@ -118,8 +133,8 @@ object Stats {
             DirectionGroup(
                 key = key,
                 name = names[key] ?: "Без названия",
-                named = key.startsWith("n:"),
-                color = counts.maxByOrNull { it.value }!!.key,
+                named = key.startsWith("n:") || key.startsWith("x:"),
+                color = display[key] ?: counts.maxByOrNull { it.value }!!.key,
                 colors = counts.keys,
                 instances = list,
             )

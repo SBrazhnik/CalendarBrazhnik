@@ -1,8 +1,12 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package app.calstats.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -35,6 +39,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.border
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.calstats.Fmt
@@ -63,6 +70,8 @@ fun ColorsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
             }
     }
 
+    var editCustom by remember { mutableStateOf<app.calstats.CustomDirection?>(null) }
+    editCustom?.let { c -> CustomDirectionDialog(vm, c, infos.map { it.color }) { editCustom = null } }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -88,6 +97,41 @@ fun ColorsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Свои направления", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.TextButton(onClick = {
+                        editCustom = app.calstats.CustomDirection(java.util.UUID.randomUUID().toString(), "", PALETTE_COLORS[7])
+                    }) { Text("+ Направление") }
+                }
+                Text(
+                    "Любое название и любой цвет. Событие попадает в направление по цвету в Google Календаре или по словам в названии (например, «тренировка, бассейн»).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            items(vm.data.custom, key = { "x" + it.id }) { c ->
+                Card(Modifier.fillMaxWidth().clickable { editCustom = c }) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ColorDot(c.display, 32.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(c.name.ifBlank { "Без названия" }, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                listOfNotNull(
+                                    c.eventColor?.let { "цвет Google" },
+                                    c.keywords.takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "слова: "),
+                                    if (c.hidden) "не в статистике" else null,
+                                ).joinToString(" · ").ifBlank { "нет правил — добавьте цвет или слова" },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        c.eventColor?.let { ColorDot(it, 16.dp) }
+                    }
+                }
+            }
+            item { Text("Цвета Google Календаря", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
             items(infos, key = { it.color }) { info ->
                 ColorItem(info, vm)
             }
@@ -101,8 +145,22 @@ private fun ColorItem(info: ColorInfo, vm: MainViewModel) {
     var name by remember(info.color) { mutableStateOf(setting?.name ?: "") }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
+            var pick by remember { mutableStateOf(false) }
+            if (pick) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { pick = false },
+                    title = { Text("Цвет в приложении") },
+                    text = {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            ColorPalette(setting?.display ?: info.color) { vm.setDirectionDisplay(info.color, it) }
+                        }
+                    },
+                    confirmButton = { androidx.compose.material3.TextButton(onClick = { pick = false }) { Text("Готово") } },
+                    dismissButton = { androidx.compose.material3.TextButton(onClick = { vm.setDirectionDisplay(info.color, null); pick = false }) { Text("Как в Google") } },
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ColorDot(info.color, 32.dp)
+                Box(Modifier.clickable { pick = true }) { ColorDot(setting?.display ?: info.color, 32.dp) }
                 Spacer(Modifier.width(12.dp))
                 OutlinedTextField(
                     value = name,
@@ -133,4 +191,67 @@ private fun ColorItem(info: ColorInfo, vm: MainViewModel) {
             }
         }
     }
+}
+
+
+/** Своё направление: название, любой цвет, цвет Google и слова. */
+@Composable
+private fun CustomDirectionDialog(vm: MainViewModel, c: app.calstats.CustomDirection, seen: List<Int>, onDismiss: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val exists = vm.data.custom.any { it.id == c.id }
+    var name by remember { mutableStateOf(c.name) }
+    var display by remember { mutableStateOf(c.display) }
+    var eventColor by remember { mutableStateOf(c.eventColor) }
+    var words by remember { mutableStateOf(c.keywords.joinToString(", ")) }
+    var hidden by remember { mutableStateOf(c.hidden) }
+    // Цвета, которые понимает Google Календарь: из аккаунта + уже встречавшиеся в событиях.
+    val google = remember(vm.calendars) {
+        val cal = vm.calendars.firstOrNull { it.accountType == "com.google" && it.primary } ?: vm.calendars.firstOrNull { it.accountType == "com.google" }
+        val opts = cal?.let { runCatching { app.calstats.CalendarRepository(ctx).eventColors(it.accountName, it.accountType).map { o -> o.color } }.getOrNull() }.orEmpty()
+        (opts + seen).distinct()
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (exists) "Направление" else "Новое направление") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Название") }, singleLine = true)
+                Text("Цвет в приложении", style = MaterialTheme.typography.labelLarge)
+                ColorPalette(display) { display = it }
+                Text("Цвет события в Google Календаре", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Google поддерживает только свои 11 цветов — выберите, каким цветом будут события этого направления. Можно не выбирать и определять направление только по словам.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    androidx.compose.material3.FilterChip(selected = eventColor == null, onClick = { eventColor = null }, label = { Text("Нет") })
+                    google.forEach { g ->
+                        Box(
+                            Modifier.size(30.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                                .then(if (eventColor == g) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, androidx.compose.foundation.shape.CircleShape) else Modifier)
+                                .clickable { eventColor = g },
+                            contentAlignment = Alignment.Center,
+                        ) { ColorDot(g, 24.dp) }
+                    }
+                }
+                OutlinedTextField(words, { words = it }, label = { Text("Слова в названии события") }, placeholder = { Text("тренировка, бассейн, зал") })
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(hidden, { hidden = it })
+                    Text("Не учитывать в статистике")
+                }
+                if (exists) androidx.compose.material3.TextButton(onClick = { vm.deleteCustomDirection(c.id); onDismiss() }) {
+                    Text("Удалить направление", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(enabled = name.isNotBlank(), onClick = {
+                vm.upsertCustomDirection(c.copy(name = name.trim(), display = display, eventColor = eventColor,
+                    keywords = words.split(',').map { it.trim() }.filter { it.isNotEmpty() }, hidden = hidden))
+                onDismiss()
+            }) { Text("Сохранить") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
 }

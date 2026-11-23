@@ -50,7 +50,25 @@ data class DirectionSetting(
     val color: Int,
     val name: String,
     val hidden: Boolean = false,
+    /** Свой цвет для показа в приложении (любой из палитры). */
+    val display: Int? = null,
 )
+
+/**
+ * Своё направление: любое название и любой цвет. События попадают в него по цвету Google
+ * ([eventColor] — один из цветов календаря) и/или по словам в названии ([keywords]).
+ */
+data class CustomDirection(
+    val id: String,
+    val name: String,
+    val display: Int,
+    val eventColor: Int? = null,
+    val keywords: List<String> = emptyList(),
+    val hidden: Boolean = false,
+) {
+    fun matches(title: String, color: Int): Boolean =
+        keywords.any { it.isNotBlank() && title.contains(it.trim(), ignoreCase = true) } || (eventColor != null && eventColor == color)
+}
 
 /** Всё, что приложение хранит само (события хранятся в Google Календаре). */
 data class AppData(
@@ -58,6 +76,7 @@ data class AppData(
     val excludedCalendars: Set<String> = emptySet(),
     val includeFuture: Boolean = false,
     val lastCalendarKey: String? = null,
+    val custom: List<CustomDirection> = emptyList(),
 )
 
 /** Задача. Хранится в приложении и входит в резервную копию. */
