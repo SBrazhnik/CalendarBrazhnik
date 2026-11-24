@@ -98,6 +98,10 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra(EXTRA_QUICK)?.let { q ->
             intent.removeExtra(EXTRA_QUICK)
             vm.stack.clear(); vm.stack.add(Screen.Main)
+            if (q.startsWith("note:")) {
+                vm.tab = Tab.NOTES; vm.push(Screen.NoteEdit(q.removePrefix("note:")))
+                return
+            }
             if (q.startsWith("card:")) {
                 vm.tab = Tab.CARDS; vm.showCardId = q.removePrefix("card:")
                 return

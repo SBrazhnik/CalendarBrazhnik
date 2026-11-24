@@ -758,6 +758,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         checkUpdate()
         pullTelegram()
         drinks = sobrietyStore.load()
+        // Готовая запись совещания добавляется в заметку через модель, пока приложение открыто
+        RecorderService.onSaved = { note, f ->
+            updateWork { w -> w.copy(notes = w.notes.map { if (it.id == note) it.copy(files = it.files + f, updated = System.currentTimeMillis()) else it }) }
+            message = "🎙 Запись сохранена в заметку"
+        }
         // Перечитываем данные, только если их поменяли извне (виджет, уведомление), и не в главном потоке.
         viewModelScope.launch(Dispatchers.IO) {
             if (workStore.stamp() != workStamp && !saveLock.isLocked) {
@@ -801,6 +806,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         observer?.let { resolver.unregisterContentObserver(it) }
+        RecorderService.onSaved = null
         // Не теряем последнее изменение, если система закрывает экран.
         runCatching { kotlinx.coroutines.runBlocking { saveLock.lock(); try { workStore.save(work) } finally { saveLock.unlock() } } }
         super.onCleared()
@@ -1022,6 +1028,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { app.calstats.widget.TodayWidget.refresh(getApplication()) }
             runCatching { Notify.scheduleHabits(getApplication(), cur) }
             runCatching { Notify.scheduleMeds(getApplication(), cur) }
+            runCatching { Notify.scheduleNotes(getApplication(), cur) }
             exportDates(cur)
         }
     }

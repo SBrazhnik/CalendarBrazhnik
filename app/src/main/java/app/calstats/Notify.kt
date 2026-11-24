@@ -44,6 +44,9 @@ object Notify {
     const val ACTION_HABIT_DONE = "app.calstats.N_HABIT_DONE"
     const val ACTION_MED = "app.calstats.N_MED"
     const val ACTION_MED_DONE = "app.calstats.N_MED_DONE"
+    const val ACTION_NOTE = "app.calstats.N_NOTE"
+    const val ACTION_NOTE_DONE = "app.calstats.N_NOTE_DONE"
+    const val ACTION_NOTE_SNOOZE = "app.calstats.N_NOTE_SNOOZE"
     private const val CH_DAY = "daily"
     private const val CH_EVENTS = "events"
 
@@ -128,6 +131,27 @@ object Notify {
         }
     }
 
+    /** Напоминания заметок: точный будильник на каждое активное (ближайшие 200). */
+    fun scheduleNotes(ctx: Context, w: app.calstats.work.Workspace = WorkStore(ctx).load()) {
+        val am = ctx.getSystemService(AlarmManager::class.java) ?: return
+        val p = ctx.getSharedPreferences("note_alarms", Context.MODE_PRIVATE)
+        val want = w.notes.filter { it.remindAt != null && !it.remindDone && !it.archived }.sortedBy { it.remindAt }.take(200)
+        val old = p.getStringSet("ids", emptySet()).orEmpty()
+        (old - want.map { it.id }.toSet()).forEach { id -> am.cancel(pi(ctx, ACTION_NOTE, 60_000 + (id.hashCode() and 0x7FFF)) { it.putExtra("note", id) }) }
+        want.forEach { n ->
+            val pe = pi(ctx, ACTION_NOTE, 60_000 + (n.id.hashCode() and 0x7FFF)) { it.putExtra("note", n.id) }
+            am.cancel(pe)
+            val t = n.remindAt!!
+            if (t > System.currentTimeMillis() - 60_000) exact(am, maxOf(t, System.currentTimeMillis() + 2000), pe)
+        }
+        p.edit().putStringSet("ids", want.map { it.id }.toSet()).apply()
+    }
+
+    private fun exact(am: AlarmManager, time: Long, p: PendingIntent) {
+        val can = android.os.Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
+        if (can) runCatching { am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, p) }.onFailure { at(am, time, p) } else at(am, time, p)
+    }
+
     /** Будильник окончания фокуса (null — отменить). */
     fun focusAlarm(ctx: Context, at: Long?, title: String) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
@@ -144,6 +168,7 @@ object Notify {
         val e = pi(ctx, ACTION_EVENING, 501)
         am.cancel(m)
         am.cancel(e)
+        runCatching { scheduleNotes(ctx) }
         if (s.morning) at(am, nextAt(s.morningTime), m)
         if (s.evening) at(am, nextAt(s.eveningTime), e)
         val wk = pi(ctx, ACTION_WEEKLY, 503)
@@ -316,6 +341,47 @@ object Notify {
                     NotificationManagerCompat.from(ctx).notify(nid, n)
                 } catch (_: SecurityException) {
                 }
+            }
+            ACTION_NOTE -> {
+                val id = intent.getStringExtra("note") ?: return
+                val w = WorkStore(ctx).load()
+                val n = w.notes.firstOrNull { it.id == id } ?: return
+                if (n.remindDone || n.remindAt == null || !DrinkReminder.canNotify(ctx)) return
+                channels(ctx)
+                val nid = 61_000 + (id.hashCode() and 0x7FFF)
+                fun act(a: String) = PendingIntent.getBroadcast(ctx, nid + a.hashCode() % 97,
+                    Intent(ctx, NotifyReceiver::class.java).setAction(a).putExtra("note", id).putExtra("nid", nid),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                val open = PendingIntent.getActivity(ctx, nid, Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_QUICK, "note:$id")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                val nb = NotificationCompat.Builder(ctx, CH_EVENTS)
+                    .setSmallIcon(R.drawable.ic_notify).setColor(0xFF1F3A2B.toInt())
+                    .setContentTitle("⏰ " + n.title.ifBlank { n.body.lineSequence().firstOrNull().orEmpty() }.take(80))
+                    .setContentText(n.body.take(200))
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(n.body.take(600)))
+                    .setContentIntent(open).setAutoCancel(true)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .addAction(0, "Выполнено ✓", act(ACTION_NOTE_DONE))
+                    .addAction(0, "Через час", act(ACTION_NOTE_SNOOZE))
+                    .build()
+                try {
+                    @Suppress("MissingPermission")
+                    NotificationManagerCompat.from(ctx).notify(nid, nb)
+                } catch (_: SecurityException) {
+                }
+            }
+            ACTION_NOTE_DONE, ACTION_NOTE_SNOOZE -> {
+                val id = intent.getStringExtra("note") ?: return
+                NotificationManagerCompat.from(ctx).cancel(intent.getIntExtra("nid", 0))
+                val store = WorkStore(ctx)
+                val w = store.load()
+                val w2 = w.copy(notes = w.notes.map { n ->
+                    if (n.id != id) n
+                    else if (intent.action == ACTION_NOTE_DONE) app.calstats.work.NoteRemind.complete(n).copy(updated = System.currentTimeMillis())
+                    else n.copy(remindAt = System.currentTimeMillis() + 3600_000L, updated = System.currentTimeMillis())
+                })
+                store.save(w2)
+                scheduleNotes(ctx, w2)
             }
             ACTION_MED -> {
                 val id = intent.getStringExtra("med") ?: return

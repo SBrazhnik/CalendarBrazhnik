@@ -243,6 +243,44 @@ data class Wish(
 data class CheckItem(val id: String, val text: String, val checked: Boolean = false)
 
 @Serializable
+data class NoteFolder(val id: String, val name: String, val color: Int? = null, val order: Int = 0)
+
+@Serializable
+data class NoteFile(val id: String, val name: String, val mime: String, val path: String, val size: Long = 0, val durationMs: Long = 0, val created: Long = System.currentTimeMillis()) {
+    val isImage get() = mime.startsWith("image/")
+    val isAudio get() = mime.startsWith("audio/")
+    val emoji get() = when {
+        isImage -> "🖼"; isAudio -> "🎙"; mime == "application/pdf" -> "📕"
+        mime.contains("word") || name.endsWith(".doc") || name.endsWith(".docx") -> "📘"
+        mime.contains("sheet") || mime.contains("excel") || name.endsWith(".xlsx") -> "📗"
+        mime.startsWith("video/") -> "🎬"; else -> "📎"
+    }
+}
+
+enum class NoteRepeat(val title: String) { NONE("Не повторять"), DAY("Каждый день"), WEEK("Каждую неделю"), MONTH("Каждый месяц"), YEAR("Каждый год") }
+
+object NoteRemind {
+    /** Следующее время для повторяющегося напоминания (после выполнения). */
+    fun next(at: Long, r: NoteRepeat): Long? {
+        val z = java.time.ZoneId.systemDefault()
+        val t = java.time.Instant.ofEpochMilli(at).atZone(z)
+        val n = when (r) {
+            NoteRepeat.NONE -> return null
+            NoteRepeat.DAY -> t.plusDays(1); NoteRepeat.WEEK -> t.plusWeeks(1)
+            NoteRepeat.MONTH -> t.plusMonths(1); NoteRepeat.YEAR -> t.plusYears(1)
+        }
+        return n.toInstant().toEpochMilli()
+    }
+
+    /** Отметить выполненным: повторяющееся переносится на следующий раз. */
+    fun complete(n: Note): Note {
+        val at = n.remindAt ?: return n.copy(remindDone = true)
+        val nx = next(at, n.repeat)
+        return if (nx != null) n.copy(remindAt = nx, remindDone = false) else n.copy(remindDone = true)
+    }
+}
+
+@Serializable
 data class Note(
     val id: String,
     val title: String = "",
@@ -256,8 +294,18 @@ data class Note(
     val source: String = "",
     val created: Long = System.currentTimeMillis(),
     val updated: Long = System.currentTimeMillis(),
+    /** Папка (как в Samsung Notes). */
+    val folderId: String? = null,
+    /** Оформление текста body (жирный, цвет, размер…) — JSON со списком отрезков. */
+    val rich: String = "",
+    val files: List<NoteFile> = emptyList(),
+    /** Напоминание (как в Samsung Reminder): время, повтор, выполнено, попадает ли в календарь. */
+    val remindAt: Long? = null,
+    val repeat: NoteRepeat = NoteRepeat.NONE,
+    val remindDone: Boolean = false,
+    val toCalendar: Boolean = false,
 ) {
-    val isEmpty: Boolean get() = title.isBlank() && body.isBlank() && checklist.none { it.text.isNotBlank() }
+    val isEmpty: Boolean get() = title.isBlank() && body.isBlank() && checklist.none { it.text.isNotBlank() } && files.isEmpty() && remindAt == null
 
     /** Текст для отправки в другие приложения. */
     fun asText(): String = buildString {
@@ -325,6 +373,7 @@ data class Workspace(
     val readingGoal: Int = 12,
     val chores: List<Chore> = emptyList(),
     val plants: List<Plant> = emptyList(),
+    val noteFolders: List<NoteFolder> = emptyList(),
 ) {
     fun category(id: String?) = finCategories.firstOrNull { it.id == id }
     fun account(id: String?) = accounts.firstOrNull { it.id == id }

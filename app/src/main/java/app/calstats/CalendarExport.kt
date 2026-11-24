@@ -27,9 +27,10 @@ object CalendarExport {
         CAR("Авто", "следующее ТО", true),
         GOALS("Цели", "срок цели", false),
         TASKS("Задачи", "срок задачи", false),
+        NOTES("Заметки-напоминания", "время напоминания (если в заметке включено «В календарь»)", true),
     }
 
-    data class Item(val source: Source, val key: String, val date: LocalDate, val title: String, val desc: String, val remindDays: List<Int> = listOf(1))
+    data class Item(val source: Source, val key: String, val date: LocalDate, val title: String, val desc: String, val remindDays: List<Int> = listOf(1), val at: Long? = null)
 
     class Settings(ctx: Context) {
         private val p = ctx.getSharedPreferences("cal_export", Context.MODE_PRIVATE)
@@ -79,6 +80,11 @@ object CalendarExport {
         if (s.on(Source.TASKS)) w.issues.filter { it.assigneeId == ME && it.status != Status.DONE && it.dueDate != null }.forEach { i ->
             out += Item(Source.TASKS, "task:" + i.id, i.dueDate!!, "📌 ${i.title}", i.description, listOf(1))
         }
+        if (s.on(Source.NOTES)) w.notes.filter { it.toCalendar && it.remindAt != null && !it.remindDone && !it.archived }.forEach { n ->
+            val at = n.remindAt!!
+            out += Item(Source.NOTES, "note:" + n.id, java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault()).toLocalDate(),
+                "📝 " + n.title.ifBlank { n.body.lineSequence().firstOrNull().orEmpty() }.take(80), n.body.take(800), listOf(0), at = at)
+        }
         return out.filter { !it.date.isBefore(today.minusDays(30)) }
     }
 
@@ -114,18 +120,19 @@ object CalendarExport {
         }
         val mapping = s.mapping()
         for (it in want.values) {
-            val begin = it.date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-            val end = it.date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-            // Напоминание за N дней в 9:00 (для событий на весь день минуты считаются от полуночи).
-            val rem = it.remindDays.map { d -> d * 1440 - 540 }
+            val timed = it.at != null
+            val begin = it.at ?: it.date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            val end = it.at?.plus(30 * 60_000L) ?: it.date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            // Напоминание за N дней в 9:00 (для событий на весь день минуты считаются от полуночи); для заметок — в момент события.
+            val rem = if (timed) listOf(0) else it.remindDays.map { d -> d * 1440 - 540 }
             val color = s.colorKey(it.source)
             val desc = (it.desc.takeIf { d -> d.isNotBlank() }?.let { d -> "$d\n\n" } ?: "") + "Из «Зелёного ритма»: ${it.source.title}"
-            val hash = listOf(it.title, it.date, desc, color, rem).hashCode().toString()
+            val hash = listOf(it.title, it.date, it.at, desc, color, rem).hashCode().toString()
             val cur = mapping[it.key]?.split("|")
             val id = cur?.getOrNull(0)?.toLongOrNull()
             if (id != null && cur.getOrNull(1) == hash && repo.event(id) != null) continue
-            val ok = id != null && repo.event(id) != null && repo.update(id, it.title, desc, begin, end, true, color, null, rem)
-            val newId = if (ok) id else repo.insert(cal.id, it.title, desc, begin, end, true, color, null, rem)
+            val ok = id != null && repo.event(id) != null && repo.update(id, it.title, desc, begin, end, !timed, color, null, rem)
+            val newId = if (ok) id else repo.insert(cal.id, it.title, desc, begin, end, !timed, color, null, rem)
             if (newId != null) {
                 s.put(it.key, "$newId|$hash|${cal.id}")
                 changes++
