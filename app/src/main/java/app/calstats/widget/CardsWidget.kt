@@ -40,7 +40,7 @@ class CardsWidget : GlanceAppWidget() {
         }
         provideContent {
             Column(GlanceModifier.fillMaxSize().background(ColorProvider(day = Color(0xFFF3F2F7), night = Color(0xFF121721))).cornerRadius(20.dp).padding(8.dp)) {
-                if (cards.isEmpty()) Text("Добавьте карты в приложении", GlanceModifier.padding(8.dp).clickable(actionStartActivity<MainActivity>()),
+                if (cards.isEmpty()) Text("Добавьте карты в приложении", GlanceModifier.padding(8.dp).clickable(androidx.glance.action.actionStartActivity<MainActivity>()),
                     style = TextStyle(color = ColorProvider(day = Color(0xFF5E6472), night = Color(0xFFAAAEB6)), fontSize = 13.sp))
                 cards.forEach { c ->
                     val i = Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_QUICK, "card:${c.id}")
