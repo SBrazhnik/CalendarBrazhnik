@@ -46,3 +46,25 @@ class SmartInputTest {
         assertEquals(Kind.HABIT, r.kind); assertEquals("h1", r.habitId)
     }
 }
+
+class ReceiptTest {
+    @Test fun qr() {
+        val r = app.calstats.work.Receipt.parse("t=20261124T1530&s=1250.50&fn=9289000100&i=12345&fp=3456789&n=1")!!
+        assertEquals(java.time.LocalDate.of(2026, 11, 24), r.date)
+        assertEquals(125050L, r.amount)
+        assertEquals(false, r.refund)
+    }
+}
+
+class InsightsTest {
+    @Test fun sleepMood() {
+        val start = java.time.LocalDate.of(2026, 9, 1)
+        val days = (0 until 40).map { start.plusDays(it.toLong()) }
+        val sleep = days.associateWith { d -> if (d.dayOfMonth % 2 == 0) 480L else 330L }
+        val moods = days.map { d -> app.calstats.work.Mood(d.toString(), if (d.dayOfMonth % 2 == 0) 5 else 3) }
+        val w = app.calstats.work.Workspace(moods = moods)
+        val s = app.calstats.work.Insights.series(w, sleep, emptyMap(), days.first(), days.last())
+        val ins = app.calstats.work.Insights.find(s)
+        org.junit.Assert.assertTrue(ins.joinToString { it.text }, ins.any { it.text.contains("настроение выше") })
+    }
+}

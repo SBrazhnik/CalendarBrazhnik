@@ -335,6 +335,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var quickEvent by mutableStateOf(false)
     /** Быстрая запись: null — закрыта, false — текстом, true — сразу голосом. */
     var quickInput by mutableStateOf<Boolean?>(null)
+    /** Операция к подтверждению (например, из QR-кода чека). */
+    var pendingTx by mutableStateOf<app.calstats.work.Transaction?>(null)
+
+    /** Сканировать QR-код кассового чека → трата на подтверждение. */
+    fun scanReceipt(ctx: android.content.Context) {
+        val opts = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE).build()
+        com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(ctx, opts).startScan()
+            .addOnSuccessListener { b ->
+                val r = app.calstats.work.Receipt.parse(b.rawValue.orEmpty())
+                if (r == null) { message = "Это не QR-код кассового чека"; return@addOnSuccessListener }
+                if (work.transactions.any { it.importKey == r.key }) { message = "Этот чек уже записан"; return@addOnSuccessListener }
+                if (!isEnabled(Tab.FINANCE)) setModuleEnabled(Tab.FINANCE, true)
+                var w = app.calstats.work.FinanceOps.ensureDefaults(work)
+                if (w.accounts.none { !it.archived }) w = app.calstats.work.FinanceOps.upsertAccount(w, app.calstats.work.Account(app.calstats.work.newId(), "Карта"))
+                if (w !== work) updateWork { w }
+                pendingTx = app.calstats.work.Transaction(
+                    app.calstats.work.newId(), if (r.refund) app.calstats.work.TxType.INCOME else app.calstats.work.TxType.EXPENSE, r.amount,
+                    w.accounts.first { !it.archived }.id, date = r.date.toString(), note = if (r.refund) "Возврат по чеку" else "Чек",
+                    source = "QR чека", importKey = r.key,
+                )
+            }
+            .addOnFailureListener { message = "Сканер недоступен: нужны сервисы Google Play" }
+    }
     /** Вечерний «Итог дня». */
     var checkIn by mutableStateOf(false)
     var loanCalc by mutableStateOf(false)

@@ -49,6 +49,11 @@ data class LifeGoal(
     val steps: List<GoalStep> = emptyList(),
     val why: String = "",
     val done: Boolean = false,
+    /** Автопрогресс: "save:<id>", "savings", "habit:<id>", "weight", "debts", "journal", "project:<id>". */
+    val link: String? = null,
+    val target: Double? = null,
+    /** Стартовое значение (вес, долг) на момент привязки. */
+    val start: Double? = null,
 ) {
     val progress: Float get() = when {
         done -> 1f
@@ -56,6 +61,71 @@ data class LifeGoal(
         else -> steps.count { it.done }.toFloat() / steps.size
     }
 }
+
+/** Прогресс цели из данных других модулей. */
+object GoalAuto {
+    data class P(val value: Float, val label: String)
+
+    data class Option(val link: String, val title: String, val needsTarget: String?)
+
+    fun options(w: Workspace): List<Option> =
+        w.goals.filter { !it.done }.map { Option("save:${it.id}", "${it.emoji} Накопление «${it.name}»", null) } +
+            Option("savings", "💰 Сумма накоплений", "Сколько накопить, ₽") +
+            w.habits.filter { !it.archived && it.kind == HabitKind.DO }.map { Option("habit:${it.id}", "${it.emoji} Привычка «${it.name}»", "Сколько раз за год") } +
+            Option("weight", "⚖ Вес", "Целевой вес, кг") +
+            Option("debts", "🤝 Закрыть свои долги", null) +
+            Option("journal", "📔 Дни с записью в дневнике", "Сколько дней за год") +
+            w.projects.filter { !it.archived }.map { Option("project:${it.id}", "✅ Задачи проекта «${it.name}»", null) }
+
+    /** Стартовое значение при привязке (для веса и долгов). */
+    fun startValue(link: String, w: Workspace, today: LocalDate): Double? = when (link) {
+        "weight" -> w.weightLog.maxByOrNull { it.date }?.kg
+        "debts" -> DebtMath.summary(w, today).iOwe / 100.0
+        else -> null
+    }
+
+    fun progress(g: LifeGoal, w: Workspace, today: LocalDate): P? {
+        val link = g.link ?: return null
+        val money = { k: Long -> SplitMath.money(k) }
+        return when {
+            link.startsWith("save:") -> w.goals.firstOrNull { it.id == link.removePrefix("save:") }?.let {
+                P(if (it.target > 0) it.saved.toFloat() / it.target else 0f, "${money(it.saved)} из ${money(it.target)}")
+            }
+            link == "savings" -> g.target?.let { t ->
+                val s = DebtMath.savings(w); P((s / 100.0 / t).toFloat(), "${money(s)} из ${money((t * 100).toLong())}")
+            }
+            link.startsWith("habit:") -> w.habits.firstOrNull { it.id == link.removePrefix("habit:") }?.let { h ->
+                val n = w.habitLogs.count { it.habitId == h.id && it.date.startsWith("${g.year}") && it.value >= h.target }
+                val t = g.target ?: 100.0
+                P((n / t).toFloat(), "$n из ${t.toInt()} раз")
+            }
+            link == "weight" -> {
+                val cur = w.weightLog.maxByOrNull { it.date }?.kg ?: return null
+                val st = g.start ?: return null; val t = g.target ?: return null
+                val f = if (st == t) 1f else ((st - cur) / (st - t)).toFloat()
+                P(f, "сейчас ${"%.1f".format(cur)} кг, цель ${"%.1f".format(t)}")
+            }
+            link == "debts" -> {
+                val st = g.start ?: return null
+                val left = DebtMath.summary(w, today).iOwe / 100.0
+                P(if (st <= 0) 1f else ((st - left) / st).toFloat(), "осталось ${money((left * 100).toLong())}")
+            }
+            link == "journal" -> {
+                val n = w.journal.count { it.date.startsWith("${g.year}") && (it.text.isNotBlank() || it.best.isNotBlank() || it.gratitude.isNotEmpty()) }
+                val t = g.target ?: 200.0
+                P((n / t).toFloat(), "$n из ${t.toInt()} дней")
+            }
+            link.startsWith("project:") -> {
+                val l = w.issues.filter { it.projectId == link.removePrefix("project:") }
+                if (l.isEmpty()) P(0f, "задач пока нет") else P(l.count { it.done }.toFloat() / l.size, "${l.count { it.done }} из ${l.size} задач")
+            }
+            else -> null
+        }?.let { it.copy(value = it.value.coerceIn(0f, 1f)) }
+    }
+}
+
+/** Прогресс с учётом автопривязки (если есть — по данным, иначе по шагам). */
+fun LifeGoal.progressIn(w: Workspace, today: LocalDate): Float = if (done) 1f else GoalAuto.progress(this, w, today)?.value ?: progress
 
 val GOAL_AREAS = listOf("Здоровье" to "💪", "Финансы" to "💰", "Карьера" to "💼", "Семья" to "👨‍👩‍👧", "Учёба" to "📚", "Путешествия" to "✈", "Дом" to "🏠", "Личное" to "🌱")
 

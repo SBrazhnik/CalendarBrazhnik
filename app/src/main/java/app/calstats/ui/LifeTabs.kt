@@ -79,6 +79,9 @@ import androidx.compose.ui.unit.sp
 import app.calstats.Fmt
 import app.calstats.MainViewModel
 import app.calstats.Tab
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import app.calstats.work.progressIn
 import app.calstats.work.BankImport
 import app.calstats.work.Car
 import app.calstats.work.CarEvent
@@ -276,7 +279,7 @@ fun GoalsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         }
         if (goals.isNotEmpty()) {
             item {
-                val avg = goals.map { it.progress }.average().toFloat()
+                val avg = goals.map { it.progressIn(vm.work, vm.today) }.average().toFloat()
                 Flat {
                     Column(Modifier.fillMaxWidth().padding(18.dp)) {
                         Text("Прогресс года", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -298,9 +301,13 @@ fun GoalsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("${g.emoji} ${g.title}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f),
                                 textDecoration = if (g.done) TextDecoration.LineThrough else null)
-                            Text("${(g.progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
+                            Text("${(g.progressIn(vm.work, vm.today) * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
                         }
-                        Bar(g.progress, moduleColor(Tab.GOALS))
+                        Bar(g.progressIn(vm.work, vm.today), moduleColor(Tab.GOALS))
+                        app.calstats.work.GoalAuto.progress(g, vm.work, vm.today)?.let {
+                            Text("🔗 " + it.label + if (it.value >= 1f && !g.done) " · 🎉 цель достигнута!" else "",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         g.steps.forEach { s ->
                             Row(
                                 Modifier.fillMaxWidth().clickable {
@@ -340,6 +347,11 @@ private fun GoalDialog(vm: MainViewModel, g: LifeGoal, onDismiss: () -> Unit) {
     var step by remember { mutableStateOf("") }
     var deadline by remember { mutableStateOf(g.deadline?.let { LocalDate.parse(it) }) }
     var done by remember { mutableStateOf(g.done) }
+    var link by remember { mutableStateOf(g.link) }
+    var target by remember { mutableStateOf(g.target?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: "") }
+    var linkMenu by remember { mutableStateOf(false) }
+    val options = remember(vm.work) { app.calstats.work.GoalAuto.options(vm.work) }
+    val opt = options.firstOrNull { it.link == link }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (exists) "Цель" else "Новая цель") },
@@ -350,6 +362,18 @@ private fun GoalDialog(vm: MainViewModel, g: LifeGoal, onDismiss: () -> Unit) {
                     GOAL_AREAS.forEach { (a, e) -> FilterChip(selected = area == a, onClick = { area = a }, label = { Text("$e $a") }) }
                 }
                 OutlinedTextField(why, { why = it }, label = { Text("Зачем мне это") }, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                Text("Прогресс из данных", style = MaterialTheme.typography.labelLarge)
+                Box {
+                    OutlinedButton(onClick = { linkMenu = true }) { Text(opt?.title ?: "🔗 Не привязана — считать по шагам", maxLines = 1) }
+                    DropdownMenu(linkMenu, { linkMenu = false }) {
+                        DropdownMenuItem(text = { Text("Не привязывать — по шагам") }, onClick = { link = null; linkMenu = false })
+                        options.forEach { o -> DropdownMenuItem(text = { Text(o.title) }, onClick = { link = o.link; linkMenu = false }) }
+                    }
+                }
+                opt?.needsTarget?.let { hint ->
+                    OutlinedTextField(target, { target = it.filter { c -> c.isDigit() || c == '.' || c == ',' } }, label = { Text(hint) }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                }
                 Text("Шаги", style = MaterialTheme.typography.labelLarge)
                 steps.forEach { s ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -373,7 +397,9 @@ private fun GoalDialog(vm: MainViewModel, g: LifeGoal, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(enabled = title.isNotBlank(), onClick = {
                 val ng = g.copy(title = title.trim(), area = area, why = why.trim(), emoji = GOAL_AREAS.firstOrNull { it.first == area }?.second ?: "🎯",
-                    steps = steps + listOfNotNull(step.takeIf { it.isNotBlank() }?.let { GoalStep(newId(), it.trim()) }), deadline = deadline?.toString(), done = done)
+                    steps = steps + listOfNotNull(step.takeIf { it.isNotBlank() }?.let { GoalStep(newId(), it.trim()) }), deadline = deadline?.toString(), done = done,
+                    link = link, target = if (opt?.needsTarget != null) target.replace(',', '.').toDoubleOrNull() else null,
+                    start = if (link == g.link && g.start != null) g.start else link?.let { app.calstats.work.GoalAuto.startValue(it, vm.work, vm.today) })
                 vm.updateWork { w -> w.copy(lifeGoals = if (exists) w.lifeGoals.map { if (it.id == g.id) ng else it } else w.lifeGoals + ng) }
                 onDismiss()
             }) { Text("Сохранить") }

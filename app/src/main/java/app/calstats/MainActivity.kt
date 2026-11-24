@@ -177,6 +177,7 @@ fun App(vm: MainViewModel) {
     vm.incoming?.let { IncomingDialog(vm, it) }
     if (vm.quickEvent) app.calstats.ui.QuickEventDialog(vm)
     vm.quickInput?.let { app.calstats.ui.QuickInputSheet(vm, it) }
+    vm.pendingTx?.let { t -> app.calstats.ui.TxSheet(vm, t) { vm.pendingTx = null } }
     if (vm.checkIn) app.calstats.ui.CheckInSheet(vm)
     vm.focus?.let { app.calstats.ui.FocusDialog(vm, it) }
     if (!vm.whatsNewChecked && vm.stack.size == 1) app.calstats.ui.WhatsNewDialog(vm)

@@ -157,8 +157,24 @@ fun ModulesAnalysis(vm: MainViewModel) {
     val stats = remember(vm.work, start, end, vm.today, vm.disabledModules) {
         ModulesAnalysisMath.compute(vm.work, start, end, vm.today) { vm.isEnabled(it) }
     }
-    if (stats.isEmpty()) return
+    val insights = remember(vm.work, vm.health, vm.today) {
+        val h = vm.health
+        val sleep = h?.days?.zip(h.sleepMin)?.toMap().orEmpty()
+        val steps = h?.days?.zip(h.steps)?.toMap().orEmpty()
+        app.calstats.work.Insights.find(app.calstats.work.Insights.series(vm.work, sleep, steps, vm.today.minusDays(59), vm.today))
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Закономерности за 2 месяца", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                if (insights.isEmpty()) Text(
+                    "Появятся, когда наберётся 2–3 недели записей: настроение, сон (Health Connect), траты, привычки, вода. Приложение сравнит дни и покажет, что на что влияет.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                insights.forEach { Text("${it.emoji} ${it.text}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer) }
+            }
+        }
+        if (stats.isEmpty()) return@Column
         Text("Модули", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 4.dp))
         stats.forEach { s ->
             Card(

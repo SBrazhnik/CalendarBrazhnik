@@ -176,6 +176,7 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Ещё") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(text = { Text("🧾 Сканировать QR-код чека") }, onClick = { menu = false; vm.scanReceipt(ctx) })
                             DropdownMenuItem(text = { Text("Импорт выписки банка (CSV)") }, onClick = {
                                 menu = false
                                 importer.launch(arrayOf("text/*", "text/csv", "text/comma-separated-values", "application/octet-stream", "application/vnd.ms-excel"))

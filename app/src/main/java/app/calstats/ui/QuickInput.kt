@@ -66,6 +66,7 @@ fun QuickInputSheet(vm: MainViewModel, voice: Boolean) {
         if (text.isBlank()) null else forced?.let { SmartInput.asKind(it, text, now, habits) } ?: SmartInput.parse(text, now, habits)
     }
     val focus = remember { FocusRequester() }
+    val ctxQ = androidx.compose.ui.platform.LocalContext.current
     val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { text = it; forced = null }
     }
@@ -100,6 +101,8 @@ fun QuickInputSheet(vm: MainViewModel, voice: Boolean) {
                 )
                 Spacer(Modifier.size(8.dp))
                 FilledIconButton(onClick = { listen() }, modifier = Modifier.size(52.dp)) { Text("🎤", style = MaterialTheme.typography.titleLarge) }
+                Spacer(Modifier.size(6.dp))
+                androidx.compose.material3.FilledTonalIconButton(onClick = { close(); vm.scanReceipt(ctxQ) }, modifier = Modifier.size(52.dp)) { Text("🧾", style = MaterialTheme.typography.titleLarge) }
             }
             if (r == null) {
                 Text(
