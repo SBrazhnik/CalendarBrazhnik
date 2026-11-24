@@ -23,7 +23,52 @@ data class LoyaltyCard(
     val uses: Int = 0,
     val lastUsed: Long = 0,
     val created: Long = System.currentTimeMillis(),
+    /** Где пользовались картой — для подсказки у магазина. */
+    val places: List<CardPlace> = emptyList(),
 )
+
+@Serializable
+data class CardPlace(val lat: Double, val lon: Double)
+
+/** Кешбэк банка в категории на месяц («2026-11»). */
+@Serializable
+data class Cashback(
+    val id: String,
+    val bank: String,
+    val month: String,
+    val category: String,
+    val percent: Double,
+)
+
+object CashbackKit {
+    val BANKS = listOf("Т-Банк", "Сбер", "Альфа", "ВТБ", "Газпромбанк", "Озон Банк", "Яндекс Пэй", "Совкомбанк", "Райффайзен", "МТС Банк")
+    val CATEGORIES = listOf(
+        "Супермаркеты", "Кафе и рестораны", "Фастфуд", "Такси", "Транспорт", "АЗС", "Аптеки", "Одежда и обувь", "Красота",
+        "Развлечения", "Кино", "Спорт", "Дом и ремонт", "Электроника", "Маркетплейсы", "Животные", "Детские товары",
+        "Путешествия", "Ж/д билеты", "Авиабилеты", "Книги", "Цветы", "Связь", "ЖКХ", "Всё остальное",
+    )
+
+    /** Категория расходов приложения → категории кешбэка. */
+    private val MAP = mapOf(
+        "Продукты" to listOf("Супермаркеты"), "Кафе и рестораны" to listOf("Кафе и рестораны", "Фастфуд"),
+        "Транспорт" to listOf("Такси", "Транспорт"), "Авто" to listOf("АЗС"), "Здоровье" to listOf("Аптеки"),
+        "Одежда" to listOf("Одежда и обувь"), "Красота" to listOf("Красота"), "Развлечения" to listOf("Развлечения", "Кино"),
+        "Спорт" to listOf("Спорт"), "Дом и ЖКХ" to listOf("Дом и ремонт", "ЖКХ"), "Животные" to listOf("Животные"),
+        "Дети" to listOf("Детские товары"), "Путешествия" to listOf("Путешествия", "Ж/д билеты", "Авиабилеты"),
+        "Образование" to listOf("Книги"), "Подарки" to listOf("Цветы"), "Связь и интернет" to listOf("Связь"),
+    )
+
+    fun month(d: java.time.LocalDate) = d.toString().take(7)
+
+    /** Лучший кешбэк в этом месяце для категории расходов (или категории кешбэка). */
+    fun best(all: List<Cashback>, month: String, category: String?): Cashback? {
+        if (category == null) return null
+        val cats = (MAP[category] ?: listOf(category)).map { it.lowercase() }
+        val m = all.filter { it.month == month }
+        return m.filter { it.category.lowercase() in cats }.maxByOrNull { it.percent }
+            ?: m.filter { it.category == "Всё остальное" }.maxByOrNull { it.percent }
+    }
+}
 
 object CardsKit {
     /** Частые магазины и их фирменные цвета (только для оформления карточки). */

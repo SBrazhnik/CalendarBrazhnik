@@ -147,7 +147,9 @@ private fun valid(r: SmartInput.Result) = when (r.kind) {
 
 private fun describe(r: SmartInput.Result, vm: MainViewModel): String = when (r.kind) {
     Kind.EXPENSE, Kind.INCOME -> if (r.amount <= 0) "Не нашёл сумму — скажите, например, «450 рублей»"
-        else SplitMath.money(r.amount) + (r.category?.let { " · $it" } ?: "") + (if (r.text.isNotBlank()) " · ${r.text}" else "") + " · сегодня"
+        else SplitMath.money(r.amount) + (r.category?.let { " · $it" } ?: "") + (if (r.text.isNotBlank()) " · ${r.text}" else "") + " · сегодня" +
+            (if (r.kind == Kind.EXPENSE) app.calstats.work.CashbackKit.best(vm.work.cashback, app.calstats.work.CashbackKit.month(vm.today), r.category)
+                ?.let { "\n💳 Выгоднее картой ${it.bank}: ${it.category} ${it.percent}%" } ?: "" else "")
     Kind.TASK -> r.text + (r.date?.let { " · до ${Fmt.dayTitle(it, vm.today)}" } ?: "")
     Kind.EVENT -> r.text + " · " + Fmt.dayTitle(r.date ?: vm.today, vm.today) + (r.time?.let { ", ${Fmt.time(it)}" } ?: ", весь день")
     Kind.WATER -> "+${r.ml} мл за сегодня"

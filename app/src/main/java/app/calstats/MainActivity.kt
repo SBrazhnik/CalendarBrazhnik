@@ -98,11 +98,16 @@ class MainActivity : ComponentActivity() {
         intent?.getStringExtra(EXTRA_QUICK)?.let { q ->
             intent.removeExtra(EXTRA_QUICK)
             vm.stack.clear(); vm.stack.add(Screen.Main)
+            if (q.startsWith("card:")) {
+                vm.tab = Tab.CARDS; vm.showCardId = q.removePrefix("card:")
+                return
+            }
             when (q) {
                 "voice" -> vm.quickInput = true
                 "text" -> vm.quickInput = false
                 "checkin" -> vm.checkIn = true
                 "water" -> vm.message = "✓ " + vm.applySmart(app.calstats.work.SmartInput.Result(app.calstats.work.SmartInput.Kind.WATER, "250 мл", ml = 250))
+                "cashback" -> { vm.subViews["cards"] = "CASHBACK"; vm.tab = Tab.CARDS }
                 "cards" -> { if (!vm.isEnabled(Tab.CARDS)) vm.setModuleEnabled(Tab.CARDS, true); vm.tab = Tab.CARDS }
             }
             return

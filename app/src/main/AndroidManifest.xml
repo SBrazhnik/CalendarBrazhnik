@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Подсказка карты у магазина (включается в «Картах») -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- Дни рождения из контактов (по желанию) -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
@@ -162,6 +166,10 @@
 
         <receiver
             android:name=".NotifyReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".CardPlaceReceiver"
             android:exported="false" />
 
         <receiver

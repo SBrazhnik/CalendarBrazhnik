@@ -222,9 +222,16 @@ fun CardsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { pad ->
+        var part by navView(vm, "cards", "CARDS")
+        Column(Modifier.padding(pad).fillMaxSize()) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.FilterChip(part == "CARDS", { part = "CARDS" }, label = { Text("Карты") })
+            androidx.compose.material3.FilterChip(part == "CASHBACK", { part = "CASHBACK" }, label = { Text("Кешбэк") })
+        }
+        if (part == "CASHBACK") { CashbackPart(vm); return@Column }
         LazyVerticalGrid(
             GridCells.Fixed(2),
-            Modifier.padding(pad).fillMaxSize(),
+            Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -256,6 +263,8 @@ fun CardsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
             items(cards, key = { it.id }) { c -> CardTile(c) { show = c.id } }
+            if (vm.work.cards.isNotEmpty()) item(span = { GridItemSpan(2) }) { NearStoreSwitch(vm) }
+        }
         }
     }
 
@@ -291,6 +300,8 @@ private fun CardShow(vm: MainViewModel, c: LoyaltyCard, onEdit: () -> Unit, onDi
         val old = win?.attributes?.screenBrightness
         win?.attributes = win?.attributes?.apply { screenBrightness = 1f }
         vm.updateWork { w -> w.copy(cards = w.cards.map { if (it.id == c.id) it.copy(uses = it.uses + 1, lastUsed = System.currentTimeMillis()) else it }) }
+        // Открыли карту на кассе — тихо запоминаем магазин (если подсказки включены)
+        if (app.calstats.CardPlaces.enabled(ctx)) app.calstats.CardPlaces.remember(ctx, vm, c.id, silent = true)
         onDispose { win?.attributes = win?.attributes?.apply { screenBrightness = old ?: -1f } }
     }
     val bmp = remember(c.number, c.format) { if (is2d(c.format)) barcodeBitmap(c.number, c.format, 700, 700) else barcodeBitmap(c.number, c.format, 1200, 380) }
@@ -317,6 +328,9 @@ private fun CardShow(vm: MainViewModel, c: LoyaltyCard, onEdit: () -> Unit, onDi
                 }
             }
             Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (app.calstats.CardPlaces.enabled(ctx)) TextButton(onClick = { app.calstats.CardPlaces.remember(ctx, vm, c.id, silent = false) }) {
+                    Text("📍 Я здесь" + if (c.places.isNotEmpty()) " (${c.places.size})" else "", color = Color(0xFF3F3561))
+                }
                 TextButton(onClick = onEdit) { Text("Изменить", color = Color(0xFF3F3561)) }
                 TextButton(onClick = onDismiss) { Text("Закрыть", color = Color(0xFF3F3561)) }
             }
@@ -392,6 +406,150 @@ private fun CardEditDialog(vm: MainViewModel, c: LoyaltyCard, onDismiss: () -> U
             TextButton(enabled = number.isNotBlank() && store.isNotBlank(), onClick = {
                 val nc = c.copy(store = store.trim(), number = number.trim(), format = format, color = color, note = note.trim(), photoFront = front, photoBack = back)
                 vm.updateWork { w -> w.copy(cards = if (exists) w.cards.map { if (it.id == c.id) nc else it } else w.cards + nc) }
+                onDismiss()
+            }) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
+
+
+/** Включение подсказки карты у магазина с запросом геолокации (точной, затем «Разрешать всегда»). */
+@Composable
+private fun NearStoreSwitch(vm: MainViewModel) {
+    val ctx = LocalContext.current
+    var on by remember { mutableStateOf(app.calstats.CardPlaces.enabled(ctx)) }
+    var askBg by remember { mutableStateOf(false) }
+    val bgLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        app.calstats.CardPlaces.sync(ctx, vm.work)
+        if (!it) vm.message = "Без «Разрешать всегда» подсказки у магазина не придут, но место будет запоминаться"
+    }
+    val fineLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
+        if (res.values.any { it }) {
+            app.calstats.CardPlaces.setEnabled(ctx, true, vm.work); on = true
+            if (!app.calstats.CardPlaces.hasBackground(ctx)) askBg = true
+        } else vm.message = "Нужен доступ к геолокации"
+    }
+    androidx.compose.material3.Card(colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("📍 Подсказывать карту у магазина", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (on) "Открывайте карту на кассе — приложение запомнит магазин и в следующий раз напомнит о ней, когда вы будете рядом. Места хранятся только в телефоне."
+                        else "Когда вы рядом с магазином, придёт уведомление с его картой.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                androidx.compose.material3.Switch(on, { v ->
+                    if (!v) { app.calstats.CardPlaces.setEnabled(ctx, false, vm.work); on = false }
+                    else if (app.calstats.CardPlaces.hasFine(ctx)) {
+                        app.calstats.CardPlaces.setEnabled(ctx, true, vm.work); on = true
+                        if (!app.calstats.CardPlaces.hasBackground(ctx)) askBg = true
+                    } else fineLauncher.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+                })
+            }
+            if (on && !app.calstats.CardPlaces.hasBackground(ctx)) TextButton(onClick = { askBg = true }) { Text("Разрешить геолокацию «всегда»") }
+        }
+    }
+    if (askBg) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { askBg = false },
+        title = { Text("Геолокация в фоне") },
+        text = { Text("Чтобы уведомление пришло, когда приложение закрыто, выберите в следующем окне «Разрешать всегда». Приложение не следит за маршрутом — Android сам сообщает только о приходе к запомненным магазинам.") },
+        confirmButton = { TextButton(onClick = {
+            askBg = false
+            if (android.os.Build.VERSION.SDK_INT >= 29) bgLauncher.launch(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }) { Text("Продолжить") } },
+        dismissButton = { TextButton(onClick = { askBg = false }) { Text("Позже") } },
+    )
+}
+
+/** Кешбэк по банкам на месяц + подсказка, какой картой платить. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun CashbackPart(vm: MainViewModel) {
+    val month = app.calstats.work.CashbackKit.month(vm.today)
+    var add by remember { mutableStateOf(false) }
+    val all = vm.work.cashback
+    val cur = all.filter { it.month == month }
+    val prev = all.filter { it.month == app.calstats.work.CashbackKit.month(vm.today.minusMonths(1)) }
+    androidx.compose.foundation.lazy.LazyColumn(
+        Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item {
+            Text("Кешбэк · ${app.calstats.Fmt.monthTitle(vm.today)}", style = MaterialTheme.typography.titleLarge)
+            Text("Запишите категории, выбранные в банках. Приложение напомнит выбрать их 1-го числа и подскажет при записи трат, какой картой платить выгоднее.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (cur.isEmpty() && prev.isNotEmpty()) item {
+            OutlinedButton(onClick = {
+                vm.updateWork { w -> w.copy(cashback = w.cashback + prev.map { it.copy(id = newId(), month = month) }) }
+            }) { Text("Перенести категории с прошлого месяца") }
+        }
+        // Лучшее по категориям
+        if (cur.isNotEmpty()) item {
+            androidx.compose.material3.Card(colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Где чем платить", style = MaterialTheme.typography.titleSmall)
+                    cur.groupBy { it.category }.map { (cat, l) -> cat to l.maxBy { it.percent } }.sortedByDescending { it.second.percent }.forEach { (cat, b) ->
+                        Text("$cat — ${b.bank} ${fmtPct(b.percent)}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+        cur.groupBy { it.bank }.forEach { (bank, list) ->
+            item(key = "b$bank") {
+                androidx.compose.material3.Card(colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(bank, style = MaterialTheme.typography.titleMedium)
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            list.sortedByDescending { it.percent }.forEach { cb ->
+                                androidx.compose.material3.InputChip(selected = false, onClick = {}, label = { Text("${cb.category} ${fmtPct(cb.percent)}") },
+                                    trailingIcon = { Text("✕", Modifier.clickable { vm.updateWork { w -> w.copy(cashback = w.cashback.filter { it.id != cb.id }) } }) })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item { Button(onClick = { add = true }) { Text("+ Добавить категорию") } }
+    }
+    if (add) CashbackDialog(vm, month) { add = false }
+}
+
+private fun fmtPct(p: Double) = (if (p % 1.0 == 0.0) p.toInt().toString() else p.toString().replace('.', ',')) + "%"
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun CashbackDialog(vm: MainViewModel, month: String, onDismiss: () -> Unit) {
+    val banks = (vm.work.cashback.map { it.bank } + app.calstats.work.CashbackKit.BANKS).distinct()
+    var bank by remember { mutableStateOf(vm.work.cashback.lastOrNull()?.bank ?: "") }
+    var cats by remember { mutableStateOf(setOf<String>()) }
+    var pct by remember { mutableStateOf("5") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Кешбэк на месяц") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(bank, { bank = it }, label = { Text("Банк") }, singleLine = true)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    banks.take(10).forEach { b -> androidx.compose.material3.FilterChip(bank == b, { bank = b }, label = { Text(b) }) }
+                }
+                OutlinedTextField(pct, { pct = it.filter { c -> c.isDigit() || c == ',' || c == '.' } }, label = { Text("Процент") }, singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                Text("Категории (можно несколько)", style = MaterialTheme.typography.labelLarge)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    app.calstats.work.CashbackKit.CATEGORIES.forEach { c ->
+                        androidx.compose.material3.FilterChip(c in cats, { cats = if (c in cats) cats - c else cats + c }, label = { Text(c) })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            val p = pct.replace(',', '.').toDoubleOrNull()
+            TextButton(enabled = bank.isNotBlank() && cats.isNotEmpty() && p != null && p > 0, onClick = {
+                vm.updateWork { w -> w.copy(cashback = w.cashback.filterNot { it.month == month && it.bank == bank.trim() && it.category in cats } +
+                    cats.map { app.calstats.work.Cashback(newId(), bank.trim(), month, it, p!!) }) }
                 onDismiss()
             }) { Text("Сохранить") }
         },

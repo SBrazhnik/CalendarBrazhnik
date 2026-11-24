@@ -314,6 +314,7 @@ data class Workspace(
     val pets: List<Pet> = emptyList(),
     val petEvents: List<PetEvent> = emptyList(),
     val cards: List<LoyaltyCard> = emptyList(),
+    val cashback: List<Cashback> = emptyList(),
 ) {
     fun category(id: String?) = finCategories.firstOrNull { it.id == id }
     fun account(id: String?) = accounts.firstOrNull { it.id == id }
