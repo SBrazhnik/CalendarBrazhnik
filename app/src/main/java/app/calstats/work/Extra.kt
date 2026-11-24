@@ -20,6 +20,9 @@ data class Recipe(
     val steps: String = "",
     val tags: List<String> = emptyList(),
     val created: Long = System.currentTimeMillis(),
+    /** Калорий на порцию — «Съел порцию» запишет в «Здоровье». */
+    val kcal: Int? = null,
+    val source: String = "",
 )
 
 enum class MealSlot(val title: String, val emoji: String) { BREAKFAST("Завтрак", "🍳"), LUNCH("Обед", "🍲"), DINNER("Ужин", "🍽"), SNACK("Перекус", "🍎") }
@@ -28,6 +31,15 @@ enum class MealSlot(val title: String, val emoji: String) { BREAKFAST("Завт�
 data class MealPlan(val id: String, val date: String, val slot: MealSlot, val recipeId: String? = null, val text: String = "")
 
 object Meals {
+    /** Что приготовить из того, что есть: рецепты по числу совпавших продуктов. */
+    fun fromPantry(recipes: List<Recipe>, have: List<String>): List<Pair<Recipe, Int>> {
+        val h = have.map { it.trim().lowercase() }.filter { it.length >= 3 }
+        if (h.isEmpty()) return emptyList()
+        return recipes.map { r ->
+            r to r.ingredients.count { i -> val n = i.name.lowercase(); h.any { x -> n.contains(x.take(5)) || x.contains(n.take(5)) } }
+        }.filter { it.second > 0 }.sortedWith(compareByDescending<Pair<Recipe, Int>> { it.second.toDouble() / maxOf(1, it.first.ingredients.size) }.thenByDescending { it.second })
+    }
+
     /** Ингредиенты блюд на дни [from, to] — одним списком, одинаковые объединены. */
     fun shopping(w: Workspace, from: LocalDate, to: LocalDate): List<Pair<String, String>> {
         val plans = w.mealPlans.filter { p -> runCatching { LocalDate.parse(p.date) }.getOrNull()?.let { !it.isBefore(from) && !it.isAfter(to) } == true }
@@ -64,7 +76,18 @@ data class WorkSet(val exerciseId: String, val weight: Double = 0.0, val reps: I
 @Serializable
 data class WorkoutLog(val id: String, val date: String, val title: String = "", val sets: List<WorkSet> = emptyList(), val minutes: Int = 0, val note: String = "")
 
+/** Готовые программы тренировок. */
+data class Program(val name: String, val exercises: List<String>)
+
 object Training {
+    val PROGRAMS = listOf(
+        Program("Всё тело (зал)", listOf("Приседания", "Жим лёжа", "Становая тяга", "Подтягивания", "Планка")),
+        Program("Верх", listOf("Жим лёжа", "Подтягивания", "Жим гантелей сидя", "Отжимания")),
+        Program("Низ", listOf("Приседания", "Выпады", "Становая тяга", "Планка")),
+        Program("Дома без железа", listOf("Отжимания", "Приседания", "Выпады", "Планка")),
+        Program("Кардио", listOf("Бег", "Велотренажёр")),
+    )
+
     val STARTERS = listOf(
         Exercise("e1", "Приседания", "Ноги"), Exercise("e2", "Жим лёжа", "Грудь"), Exercise("e3", "Становая тяга", "Спина"),
         Exercise("e4", "Подтягивания", "Спина"), Exercise("e5", "Отжимания", "Грудь"), Exercise("e6", "Жим гантелей сидя", "Плечи"),
@@ -92,7 +115,7 @@ object Training {
 data class TripItem(val id: String, val text: String, val done: Boolean = false)
 
 @Serializable
-data class TripCost(val id: String, val title: String, val amount: Long)
+data class TripCost(val id: String, val title: String, val amount: Long, val paidBy: String = "")
 
 @Serializable
 data class Trip(
@@ -107,6 +130,12 @@ data class Trip(
     val bookings: List<TripItem> = emptyList(),
     val costs: List<TripCost> = emptyList(),
     val note: String = "",
+    /** План по дням: дата → что делаем. */
+    val days: Map<String, String> = emptyMap(),
+    /** Попутчики — для деления расходов. */
+    val people: List<String> = emptyList(),
+    /** Валюта страны (USD, EUR, TRY…). */
+    val currency: String = "",
 ) {
     val startDate: LocalDate get() = LocalDate.parse(start)
     val endDate: LocalDate get() = LocalDate.parse(end)
@@ -132,6 +161,24 @@ object Trips {
     }
 
     fun daysLeft(t: Trip, today: LocalDate) = ChronoUnit.DAYS.between(today, t.startDate)
+
+    /** Кто кому сколько должен (поровну на всех, «я» + попутчики). */
+    fun settle(t: Trip): List<String> {
+        val all = (listOf("Я") + t.people).distinct()
+        if (all.size < 2 || t.costs.isEmpty()) return emptyList()
+        val share = t.costs.sumOf { it.amount } / all.size
+        val bal = all.associateWith { p -> t.costs.filter { (it.paidBy.ifBlank { "Я" }) == p }.sumOf { it.amount } - share }.toMutableMap()
+        val out = mutableListOf<String>()
+        while (true) {
+            val (cp, cv) = bal.maxByOrNull { it.value } ?: break
+            val (dp, dv) = bal.minByOrNull { it.value } ?: break
+            if (cv < 100 || dv > -100) break
+            val x = minOf(cv, -dv)
+            out += "$dp → $cp: ${SplitMath.money(x)}"
+            bal[cp] = cv - x; bal[dp] = dv + x
+        }
+        return out
+    }
 }
 
 // ======================= ЧТЕНИЕ И ОБУЧЕНИЕ =======================
@@ -153,12 +200,14 @@ data class Book(
     val rating: Int = 0,
     val note: String = "",
     val created: Long = System.currentTimeMillis(),
+    val quotes: List<String> = emptyList(),
+    val minutes: Int = 0,
 ) {
     val progress: Float get() = if (status == BookStatus.DONE) 1f else if (total > 0) (current.toFloat() / total).coerceIn(0f, 1f) else 0f
 }
 
 @Serializable
-data class ReadLog(val date: String, val bookId: String, val amount: Int)
+data class ReadLog(val date: String, val bookId: String, val amount: Int, val minutes: Int = 0)
 
 object Reading {
     fun doneThisYear(w: Workspace, year: Int) = w.readBooks.count { it.status == BookStatus.DONE && it.finished?.startsWith("$year") == true }
@@ -183,7 +232,10 @@ data class Chore(
     /** Очередь исполнителей: после отметки ход переходит к следующему. */
     val people: List<String> = emptyList(),
     val turn: Int = 0,
+    /** Только в эти месяцы (сезонные дела); пусто — круглый год. */
+    val months: List<Int> = emptyList(),
 ) {
+    fun inSeason(today: LocalDate) = months.isEmpty() || today.monthValue in months
     fun due(today: LocalDate): LocalDate = lastDone?.let { LocalDate.parse(it).plusDays(everyDays.toLong()) } ?: today
     fun daysLeft(today: LocalDate) = ChronoUnit.DAYS.between(today, due(today))
     fun whoseTurn(): String? = people.getOrNull(turn % maxOf(1, people.size))
@@ -197,6 +249,15 @@ object Chores {
         Chore("c5", "Разморозить и помыть холодильник", "Кухня", 90), Chore("c6", "Почистить фильтр вытяжки", "Кухня", 90),
         Chore("c7", "Помыть окна", "Вся квартира", 180), Chore("c8", "Вынести мусор", "Кухня", 2),
         Chore("c9", "Заменить фильтр для воды", "Кухня", 60), Chore("c10", "Почистить стиральную машину", "Ванная", 30),
+    )
+    /** Сезонные дела. */
+    val SEASONAL = listOf(
+        Chore("s1", "Убрать зимние вещи, достать летние", "Спальня", 365, months = listOf(4, 5)),
+        Chore("s2", "Достать зимние вещи", "Спальня", 365, months = listOf(10, 11)),
+        Chore("s3", "Помыть окна снаружи", "Вся квартира", 180, months = listOf(4, 5, 9)),
+        Chore("s4", "Утеплить окна / проверить уплотнители", "Вся квартира", 365, months = listOf(10)),
+        Chore("s5", "Почистить кондиционер", "Вся квартира", 365, months = listOf(4, 5)),
+        Chore("s6", "Разобрать балкон", "Балкон", 365, months = listOf(4, 9)),
     )
 
     fun done(c: Chore, today: LocalDate) = c.copy(lastDone = today.toString(), turn = if (c.people.isEmpty()) 0 else (c.turn + 1) % c.people.size)
@@ -215,7 +276,10 @@ data class Plant(
     val lastWater: String? = null,
     val lastFeed: String? = null,
     val note: String = "",
+    val repotMonths: Int? = null,
+    val lastRepot: String? = null,
 ) {
+    fun repotIn(today: LocalDate): Long? = repotMonths?.let { m -> lastRepot?.let { ChronoUnit.DAYS.between(today, LocalDate.parse(it).plusMonths(m.toLong())) } }
     fun waterIn(today: LocalDate) = lastWater?.let { ChronoUnit.DAYS.between(today, LocalDate.parse(it).plusDays(waterDays.toLong())) } ?: 0
     fun feedIn(today: LocalDate) = feedDays?.let { fd -> lastFeed?.let { ChronoUnit.DAYS.between(today, LocalDate.parse(it).plusDays(fd.toLong())) } ?: 0 }
 }

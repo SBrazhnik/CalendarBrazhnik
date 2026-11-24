@@ -279,7 +279,7 @@ object Notify {
         w.meters.forEach { m -> m.verifyUntil?.let { java.time.LocalDate.parse(it) }?.let { d -> if (java.time.temporal.ChronoUnit.DAYS.between(today, d) in listOf(60L, 30L, 7L)) out += "🔍 Поверка счётчика «${m.name}» до ${Fmt.dateNoYear(d)}" } }
         w.pets.forEach { p -> p.foodDaysLeft(today)?.let { l -> if (l in 0..3) out += "🥫 Корм для ${p.name} закончится через $l дн." } }
         if (today.dayOfMonth == 1 && w.lifeGoals.any { !it.done && it.year == today.year }) out += "🎯 Новый месяц — 5 минут на разбор целей"
-        w.chores.filter { it.daysLeft(today) <= 0 }.takeIf { it.isNotEmpty() }?.let { l -> out += "🧹 По дому: " + l.take(3).joinToString { it.title.lowercase() } + if (l.size > 3) " и ещё ${l.size - 3}" else "" }
+        w.chores.filter { it.inSeason(today) && it.daysLeft(today) <= 0 }.takeIf { it.isNotEmpty() }?.let { l -> out += "🧹 По дому: " + l.take(3).joinToString { it.title.lowercase() } + if (l.size > 3) " и ещё ${l.size - 3}" else "" }
         w.plants.filter { it.waterIn(today) <= 0 }.takeIf { it.isNotEmpty() }?.let { l -> out += "🪴 Полить: " + l.joinToString { it.name } }
         w.trips.filter { app.calstats.work.Trips.daysLeft(it, today) in listOf(1L, 3L, 7L) }.forEach { t ->
             val left = t.packing.count { !it.done }

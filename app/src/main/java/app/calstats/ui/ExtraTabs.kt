@@ -73,6 +73,7 @@ import app.calstats.work.WorkSet
 import app.calstats.work.WorkoutLog
 import app.calstats.work.newId
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 
 @Composable
 private fun Tip(text: String) = Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -91,6 +92,8 @@ fun MealsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var editRecipe by remember { mutableStateOf<Recipe?>(null) }
     var pick by remember { mutableStateOf<Pair<LocalDate, MealSlot>?>(null) }
     var openRecipe by remember { mutableStateOf<Recipe?>(null) }
+    var linkDialog by remember { mutableStateOf(false) }
+    var pantry by remember { mutableStateOf(false) }
     val w = vm.work
     val monday = vm.today.minusDays(vm.today.dayOfWeek.value - 1L).plusWeeks(week.toLong())
     ModuleScaffold("Меню", snackbar, fab = if (part == "RECIPES") "Рецепт" to { editRecipe = Recipe(newId(), "") } else null) {
@@ -153,6 +156,12 @@ fun MealsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
         } else {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { linkDialog = true }) { Text("🔗 По ссылке") }
+                    OutlinedButton(onClick = { pantry = true }) { Text("🧺 Что приготовить?") }
+                }
+            }
             if (w.recipes.isEmpty()) item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Tip("Рецепт — это список продуктов и как готовить. Добавьте свои или начните с простых.")
@@ -206,13 +215,60 @@ fun MealsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     Tip(listOfNotNull(r.minutes?.let { "$it мин" }, "${r.servings} порц.").joinToString(" · "))
                     r.ingredients.forEach { Text("• ${it.name}" + if (it.qty.isNotBlank()) " — ${it.qty}" else "", style = MaterialTheme.typography.bodyMedium) }
                     if (r.steps.isNotBlank()) { Spacer(Modifier.width(4.dp)); Text(r.steps, style = MaterialTheme.typography.bodyMedium) }
+                    r.kcal?.let { k -> Tip("$k ккал на порцию") }
                 }
             },
-            confirmButton = { TextButton(onClick = { openRecipe = null }) { Text("Закрыть") } },
+            confirmButton = {
+                if (r.kcal != null && vm.isEnabled(Tab.HEALTH)) TextButton(onClick = {
+                    val h = java.time.LocalTime.now().hour
+                    val meal = when { h < 11 -> app.calstats.work.Meal.BREAKFAST; h < 16 -> app.calstats.work.Meal.LUNCH; h < 21 -> app.calstats.work.Meal.DINNER; else -> app.calstats.work.Meal.SNACK }
+                    vm.updateWork { app.calstats.work.HealthOps.addFood(it, app.calstats.work.FoodEntry(newId(), vm.today.toString(), meal, r.title, 300, r.kcal.toDouble(), 0.0, 0.0, 0.0), null) }
+                    vm.message = "🍽 ${r.title}: ${r.kcal} ккал записано в «Здоровье»"; openRecipe = null
+                }) { Text("Съел порцию") } else TextButton(onClick = { openRecipe = null }) { Text("Закрыть") }
+            },
             dismissButton = { TextButton(onClick = { editRecipe = r; openRecipe = null }) { Text("Изменить") } },
         )
     }
     editRecipe?.let { r -> RecipeEditDialog(vm, r) { editRecipe = null } }
+    if (linkDialog) {
+        var url by remember { mutableStateOf("") }
+        var busy by remember { mutableStateOf(false) }
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        AlertDialog(
+            onDismissRequest = { linkDialog = false }, title = { Text("Рецепт по ссылке") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Tip("Вставьте ссылку на рецепт с кулинарного сайта (Едим Дома, Поварёнок, Food.ru и др.) — название, продукты и шаги подставятся сами.")
+                OutlinedTextField(url, { url = it.trim() }, placeholder = { Text("https://…") }, singleLine = true)
+                if (busy) Tip("Загружаю…")
+            } },
+            confirmButton = { TextButton(enabled = url.startsWith("http") && !busy, onClick = {
+                busy = true
+                scope.launch {
+                    val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.calstats.Net.recipe(url) }.getOrNull() }
+                    busy = false
+                    if (r == null) vm.message = "На странице не нашёл рецепт — добавьте вручную"
+                    else { linkDialog = false; editRecipe = r.copy(source = url) }
+                }
+            }) { Text("Загрузить") } },
+            dismissButton = { TextButton(onClick = { linkDialog = false }) { Text("Отмена") } },
+        )
+    }
+    if (pantry) {
+        var have by remember { mutableStateOf("") }
+        val res = remember(have, w.recipes) { Meals.fromPantry(w.recipes, have.split(',', '\n')) }
+        AlertDialog(
+            onDismissRequest = { pantry = false }, title = { Text("Что есть дома?") },
+            text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(have, { have = it }, placeholder = { Text("курица, рис, помидоры") }, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None))
+                if (have.isNotBlank() && res.isEmpty()) Tip("Подходящих рецептов нет — добавьте больше рецептов")
+                res.take(10).forEach { (r, n) ->
+                    Text("${r.emoji} ${r.title} — есть $n из ${r.ingredients.size}", Modifier.fillMaxWidth().clickable { pantry = false; openRecipe = r }.padding(vertical = 8.dp),
+                        style = MaterialTheme.typography.bodyLarge)
+                }
+            } },
+            confirmButton = { TextButton(onClick = { pantry = false }) { Text("Закрыть") } },
+        )
+    }
 }
 
 @Composable
@@ -224,6 +280,7 @@ private fun RecipeEditDialog(vm: MainViewModel, r: Recipe, onDismiss: () -> Unit
     var servings by remember { mutableStateOf(r.servings.toString()) }
     var ings by remember { mutableStateOf(r.ingredients.joinToString("\n") { it.name + if (it.qty.isNotBlank()) " — ${it.qty}" else "" }) }
     var steps by remember { mutableStateOf(r.steps) }
+    var kcal by remember { mutableStateOf(r.kcal?.toString() ?: "") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (exists) "Рецепт" else "Новый рецепт") },
@@ -240,6 +297,7 @@ private fun RecipeEditDialog(vm: MainViewModel, r: Recipe, onDismiss: () -> Unit
                 OutlinedTextField(ings, { ings = it }, label = { Text("Продукты — по одному в строке") }, placeholder = { Text("Яйца — 3 шт\nМолоко — 200 мл") }, minLines = 4,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                 OutlinedTextField(steps, { steps = it }, label = { Text("Как готовить") }, minLines = 3, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                OutlinedTextField(kcal, { kcal = it.filter(Char::isDigit) }, label = { Text("Ккал на порцию (необязательно)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 if (exists) TextButton(onClick = { vm.updateWork { w -> w.copy(recipes = w.recipes.filter { it.id != r.id }) }; onDismiss() }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -249,7 +307,7 @@ private fun RecipeEditDialog(vm: MainViewModel, r: Recipe, onDismiss: () -> Unit
                     val p = l.split(Regex("\\s+[—–-]\\s+|:\\s*"), limit = 2)
                     RecipeIng(p[0].trim(), p.getOrNull(1)?.trim().orEmpty())
                 }
-                val nr = r.copy(title = title.trim(), emoji = emoji, minutes = minutes.toIntOrNull(), servings = servings.toIntOrNull() ?: 2, ingredients = list, steps = steps.trim())
+                val nr = r.copy(title = title.trim(), emoji = emoji, minutes = minutes.toIntOrNull(), servings = servings.toIntOrNull() ?: 2, ingredients = list, steps = steps.trim(), kcal = kcal.toIntOrNull())
                 vm.updateWork { w -> w.copy(recipes = if (exists) w.recipes.map { if (it.id == r.id) nr else it } else w.recipes + nr) }
                 onDismiss()
             }) { Text("Сохранить") }
@@ -279,6 +337,12 @@ fun WorkoutsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         Text("${w.workouts.count { it.date.startsWith("${vm.today.year}") }}", style = MaterialTheme.typography.displaySmall)
                         Tip("за ${vm.today.year} год")
                     }
+                    vm.health?.let { h -> h.days.indexOf(vm.today).takeIf { it >= 0 }?.let { i ->
+                        Column(Modifier.weight(1f)) {
+                            Text("${h.steps[i]}", style = MaterialTheme.typography.displaySmall)
+                            Tip("шагов сегодня")
+                        }
+                    } }
                 }
             }
         }
@@ -347,6 +411,24 @@ private fun WorkoutDialog(vm: MainViewModel, l: WorkoutLog, onDismiss: () -> Uni
                     }
                     TextButton(onClick = { val last = sets.last { it.first == exId }; sets = sets + last }) { Text("+ подход") }
                 }
+                if (sets.isEmpty()) {
+                    Text("Программа", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Training.PROGRAMS.forEach { pr ->
+                            FilterChip(false, {
+                                var ex = vm.work.exercises
+                                val missing = pr.exercises.filter { n -> ex.none { it.name == n } }.map { Exercise(newId(), it) }
+                                if (missing.isNotEmpty()) { vm.updateWork { it.copy(exercises = it.exercises + missing) }; ex = ex + missing }
+                                title = pr.name
+                                sets = pr.exercises.mapNotNull { n -> ex.firstOrNull { it.name == n } }.map { e ->
+                                    val prev = Training.last(vm.work, e.id)
+                                    Triple(e.id, prev?.weight?.takeIf { it > 0 }?.let { fmtKg(it).removeSuffix(" кг") } ?: "", prev?.reps?.takeIf { it > 0 }?.toString() ?: "")
+                                }
+                            }, label = { Text(pr.name) })
+                        }
+                    }
+                }
+                RestTimer()
                 Text("Добавить упражнение", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     exercises.filter { e -> sets.none { it.first == e.id } }.forEach { e ->
@@ -425,6 +507,12 @@ private fun TripDetail(vm: MainViewModel, t: Trip, snackbar: SnackbarHostState, 
     var newBooking by remember { mutableStateOf("") }
     var costTitle by remember { mutableStateOf("") }
     var costAmount by remember { mutableStateOf("") }
+    var payer by remember { mutableStateOf("Я") }
+    var dayEdit by remember { mutableStateOf<LocalDate?>(null) }
+    var rate by remember { mutableStateOf<Double?>(null) }
+    androidx.compose.runtime.LaunchedEffect(t.currency) {
+        if (t.currency.isNotBlank() && t.currency != "RUB") rate = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.calstats.Net.rates()[t.currency] }.getOrNull() }
+    }
     fun upd(f: (Trip) -> Trip) = vm.updateWork { w -> w.copy(trips = w.trips.map { if (it.id == t.id) f(it) else it }) }
     ModuleScaffold(t.title, snackbar, actions = {
         TextButton(onClick = onEdit) { Text("Изменить") }
@@ -440,7 +528,26 @@ private fun TripDetail(vm: MainViewModel, t: Trip, snackbar: SnackbarHostState, 
                         color = if (t.budget in 1 until spent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                     Trips.warnings(t, vm.work).forEach { Text("⚠ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                     if (t.note.isNotBlank()) Tip(t.note)
+                    rate?.let { r ->
+                        var conv by remember { mutableStateOf("100") }
+                        Text("💱 1 ${t.currency} = ${"%.2f".format(r).replace('.', ',')} ₽ (курс ЦБ)", style = MaterialTheme.typography.bodyMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(conv, { conv = it.filter { c -> c.isDigit() || c == ',' || c == '.' } }, Modifier.width(120.dp), suffix = { Text(t.currency) }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                            Text("= " + SplitMath.money(Math.round((num(conv) ?: 0.0) * r * 100)), style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
                 }
+            }
+        }
+        // План по дням
+        item { Head("План по дням") }
+        val nDays = java.time.temporal.ChronoUnit.DAYS.between(t.startDate, t.endDate).toInt().coerceIn(0, 30)
+        items((0..nDays).map { t.startDate.plusDays(it.toLong()) }, key = { "day$it" }) { d ->
+            Row(Modifier.fillMaxWidth().clickable { dayEdit = d }.padding(vertical = 6.dp)) {
+                Text("${Fmt.dateNoYear(d)}", Modifier.width(80.dp), style = MaterialTheme.typography.labelLarge, color = moduleColor(Tab.TRIPS))
+                Text(t.days[d.toString()]?.takeIf { it.isNotBlank() } ?: "+ план", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                    color = if (t.days[d.toString()].isNullOrBlank()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface)
             }
         }
         item { Head("Взять с собой · ${t.packing.count { it.done }}/${t.packing.size}") }
@@ -455,7 +562,7 @@ private fun TripDetail(vm: MainViewModel, t: Trip, snackbar: SnackbarHostState, 
         item { Head("Расходы") }
         items(t.costs, key = { "c" + it.id }) { c ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(c.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Text(c.title + if (t.people.isNotEmpty()) " · платил ${c.paidBy.ifBlank { "Я" }}" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Text(SplitMath.money(c.amount), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 Text("✕", Modifier.clickable { upd { tr -> tr.copy(costs = tr.costs.filter { it.id != c.id }) } }.padding(8.dp), color = MaterialTheme.colorScheme.outline)
             }
@@ -465,10 +572,35 @@ private fun TripDetail(vm: MainViewModel, t: Trip, snackbar: SnackbarHostState, 
                 OutlinedTextField(costTitle, { costTitle = it }, Modifier.weight(1.4f), label = { Text("На что") }, singleLine = true, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                 OutlinedTextField(costAmount, { costAmount = it.filter { c -> c.isDigit() || c == ',' || c == '.' } }, Modifier.weight(1f), label = { Text("₽") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 TextButton(enabled = costTitle.isNotBlank() && (num(costAmount) ?: 0.0) > 0, onClick = {
-                    upd { it.copy(costs = it.costs + TripCost(newId(), costTitle.trim(), Math.round(num(costAmount)!! * 100))) }; costTitle = ""; costAmount = ""
+                    upd { it.copy(costs = it.costs + TripCost(newId(), costTitle.trim(), Math.round(num(costAmount)!! * 100), payer)) }; costTitle = ""; costAmount = ""
                 }) { Text("+") }
             }
         }
+        if (t.people.isNotEmpty()) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Tip("Платил:")
+                    (listOf("Я") + t.people).forEach { pp -> FilterChip(payer == pp, { payer = pp }, label = { Text(pp) }) }
+                }
+            }
+            val st = Trips.settle(t)
+            if (st.isNotEmpty()) item {
+                Flat { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Кто кому должен (поровну на ${t.people.size + 1})", style = MaterialTheme.typography.titleSmall)
+                    st.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                } }
+            }
+        }
+    }
+    dayEdit?.let { d ->
+        var txt by remember { mutableStateOf(t.days[d.toString()].orEmpty()) }
+        AlertDialog(
+            onDismissRequest = { dayEdit = null }, title = { Text(Fmt.date(d)) },
+            text = { OutlinedTextField(txt, { txt = it }, Modifier.fillMaxWidth(), minLines = 3, placeholder = { Text("Музей утром, обед у моря, вечером прогулка") },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)) },
+            confirmButton = { TextButton(onClick = { upd { it.copy(days = it.days + (d.toString() to txt.trim())) }; dayEdit = null }) { Text("Сохранить") } },
+            dismissButton = { TextButton(onClick = { dayEdit = null }) { Text("Отмена") } },
+        )
     }
 }
 
@@ -500,6 +632,8 @@ private fun TripDialog(vm: MainViewModel, t: Trip, onDismiss: () -> Unit) {
     var abroad by remember { mutableStateOf(t.abroad) }
     var budget by remember { mutableStateOf(if (t.budget > 0) SplitMath.plain(t.budget) else "") }
     var note by remember { mutableStateOf(t.note) }
+    var people by remember { mutableStateOf(t.people.joinToString(", ")) }
+    var currency by remember { mutableStateOf(t.currency) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (exists) "Поездка" else "Новая поездка") },
@@ -512,6 +646,10 @@ private fun TripDialog(vm: MainViewModel, t: Trip, onDismiss: () -> Unit) {
                     OutlinedButton(onClick = { pickDate(ctx, end) { if (!it.isBefore(start)) end = it } }) { Text("по ${Fmt.date(end)}") }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(abroad, { abroad = it }); Text("За границу") }
+                if (abroad) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf("USD", "EUR", "TRY", "AED", "CNY", "THB", "GEL", "AMD", "KZT", "BYN").forEach { c -> FilterChip(currency == c, { currency = if (currency == c) "" else c }, label = { Text(c) }) }
+                }
+                OutlinedTextField(people, { people = it }, label = { Text("Попутчики через запятую") }, singleLine = true, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words))
                 OutlinedTextField(budget, { budget = it.filter { c -> c.isDigit() || c == ',' || c == '.' } }, label = { Text("Бюджет, ₽") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 OutlinedTextField(note, { note = it }, label = { Text("Заметка") }, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                 if (exists) TextButton(onClick = { vm.updateWork { w -> w.copy(trips = w.trips.filter { it.id != t.id }) }; vm.subViews.remove("trip"); onDismiss() }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
@@ -520,7 +658,8 @@ private fun TripDialog(vm: MainViewModel, t: Trip, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(enabled = title.isNotBlank(), onClick = {
                 val nt = t.copy(title = title.trim(), place = place.trim(), start = start.toString(), end = end.toString(), abroad = abroad,
-                    budget = num(budget)?.let { Math.round(it * 100) } ?: 0, note = note.trim())
+                    budget = num(budget)?.let { Math.round(it * 100) } ?: 0, note = note.trim(),
+                    people = people.split(',').map { it.trim() }.filter { it.isNotBlank() && it != "Я" }, currency = if (abroad) currency else "")
                 vm.updateWork { w -> w.copy(trips = if (exists) w.trips.map { if (it.id == t.id) nt else it } else w.trips + nt) }
                 onDismiss()
             }) { Text("Сохранить") }
@@ -536,6 +675,12 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var edit by remember { mutableStateOf<Book?>(null) }
     var goalEdit by remember { mutableStateOf(false) }
     var progressFor by remember { mutableStateOf<Book?>(null) }
+    var timerMin by remember { mutableStateOf(0) }
+    // Таймер чтения: какая книга и с какого момента
+    var timing by rememberSaveable { mutableStateOf<String?>(null) }
+    var timingStart by rememberSaveable { mutableStateOf(0L) }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    androidx.compose.runtime.LaunchedEffect(timing) { while (timing != null) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) } }
     val w = vm.work
     val year = vm.today.year
     val done = app.calstats.work.Reading.doneThisYear(w, year)
@@ -564,13 +709,20 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                                     Text("${b.kind.emoji} ${b.title}", style = MaterialTheme.typography.titleSmall)
                                     if (b.author.isNotBlank()) Tip(b.author)
                                 }
-                                if (st == BookStatus.ACTIVE) OutlinedButton(onClick = { progressFor = b }) { Text("+ прочитал") }
+                                if (st == BookStatus.ACTIVE) {
+                                    if (timing == b.id) {
+                                        val sec = (now - timingStart) / 1000
+                                        TextButton(onClick = { timerMin = ((sec + 30) / 60).toInt(); timing = null; progressFor = b }) { Text("⏹ ${sec / 60}:${"%02d".format(sec % 60)}") }
+                                    } else TextButton(onClick = { timing = b.id; timingStart = System.currentTimeMillis() }, enabled = timing == null) { Text("⏱") }
+                                    OutlinedButton(onClick = { timerMin = 0; progressFor = b }) { Text("+ прочитал") }
+                                }
                                 if (st == BookStatus.DONE && b.rating > 0) Text("★".repeat(b.rating))
                             }
                             if (st == BookStatus.ACTIVE && b.total > 0) {
                                 Bar(b.progress, moduleColor(Tab.READING))
-                                Tip("${b.current} из ${b.total} ${b.kind.unit} · ${(b.progress * 100).toInt()}%")
+                                Tip("${b.current} из ${b.total} ${b.kind.unit} · ${(b.progress * 100).toInt()}%" + if (b.minutes > 0) " · ${b.minutes / 60} ч ${b.minutes % 60} мин чтения" else "")
                             }
+                            b.quotes.lastOrNull()?.let { q -> Tip("❝ $q") }
                         }
                     }
                 }
@@ -590,18 +742,19 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Tip("Сколько ${b.kind.unit} прочитали сегодня, или на какой вы сейчас")
+                    if (timerMin > 0) Tip("⏱ Читали $timerMin мин")
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf(10, 20, 30, 50).forEach { k -> FilterChip(false, { n = k.toString() }, label = { Text("+$k") }) } }
                     OutlinedTextField(n, { n = it.filter(Char::isDigit) }, label = { Text("Прочитал сегодня") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 }
             },
             confirmButton = { TextButton(onClick = {
                 val add = n.toIntOrNull() ?: 0
-                if (add > 0) vm.updateWork { w0 ->
+                if (add > 0 || timerMin > 0) vm.updateWork { w0 ->
                     val cur = (b.current + add).let { if (b.total > 0) it.coerceAtMost(b.total) else it }
                     val fin = b.total in 1..cur
                     w0.copy(
-                        readBooks = w0.readBooks.map { if (it.id == b.id) it.copy(current = cur, status = if (fin) BookStatus.DONE else it.status, finished = if (fin) vm.today.toString() else it.finished) else it },
-                        readLogs = w0.readLogs + ReadLog(vm.today.toString(), b.id, add),
+                        readBooks = w0.readBooks.map { if (it.id == b.id) it.copy(current = cur, status = if (fin) BookStatus.DONE else it.status, finished = if (fin) vm.today.toString() else it.finished, minutes = it.minutes + timerMin) else it },
+                        readLogs = w0.readLogs + ReadLog(vm.today.toString(), b.id, add, timerMin),
                     )
                 }
                 if (b.total in 1..(b.current + (n.toIntOrNull() ?: 0))) vm.message = "🎉 «${b.title}» прочитана!"
@@ -623,12 +776,29 @@ private fun ReadBookDialog(vm: MainViewModel, b: Book, onDismiss: () -> Unit) {
     var status by remember { mutableStateOf(if (exists) b.status else BookStatus.ACTIVE) }
     var rating by remember { mutableStateOf(b.rating) }
     var note by remember { mutableStateOf(b.note) }
+    var quotes by remember { mutableStateOf(b.quotes) }
+    var quote by remember { mutableStateOf("") }
+    val ctx = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    fun scanIsbn() {
+        val opts = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_EAN_13).build()
+        com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(ctx, opts).startScan().addOnSuccessListener { code ->
+            val isbn = code.rawValue.orEmpty()
+            scope.launch {
+                val info = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { app.calstats.Net.isbn(isbn) }.getOrNull() }
+                if (info == null) vm.message = "Книгу по штрихкоду не нашёл — впишите вручную"
+                else { title = info.title; author = info.author; if (info.pages > 0) total = info.pages.toString(); kind = BookKind.BOOK }
+            }
+        }.addOnFailureListener { vm.message = "Сканер недоступен" }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (exists) "Книга" else "Новая книга или курс") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { BookKind.entries.forEach { k -> FilterChip(kind == k, { kind = k }, label = { Text("${k.emoji} ${k.title}") }) } }
+                if (!exists) OutlinedButton(onClick = { scanIsbn() }) { Text("📷 Штрихкод на обложке (ISBN)") }
                 OutlinedTextField(title, { title = it }, label = { Text("Название") }, singleLine = true, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                 OutlinedTextField(author, { author = it }, label = { Text(if (kind == BookKind.COURSE) "Школа / автор" else "Автор") }, singleLine = true, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -637,7 +807,13 @@ private fun ReadBookDialog(vm: MainViewModel, b: Book, onDismiss: () -> Unit) {
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) { BookStatus.entries.forEach { s -> FilterChip(status == s, { status = s }, label = { Text(s.title) }) } }
                 if (status == BookStatus.DONE) Row { (1..5).forEach { i -> Text(if (i <= rating) "★" else "☆", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.clickable { rating = i }.padding(2.dp)) } }
-                OutlinedTextField(note, { note = it }, label = { Text("Мысли, цитаты") }, minLines = 2, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                OutlinedTextField(note, { note = it }, label = { Text("Мысли") }, minLines = 2, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                Text("Цитаты", style = MaterialTheme.typography.labelLarge)
+                quotes.forEach { q -> Row { Text("❝ $q", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); Text("✕", Modifier.clickable { quotes = quotes - q }.padding(4.dp)) } }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(quote, { quote = it }, Modifier.weight(1f), placeholder = { Text("Новая цитата") }, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                    TextButton(enabled = quote.isNotBlank(), onClick = { quotes = quotes + quote.trim(); quote = "" }) { Text("+") }
+                }
                 if (exists) TextButton(onClick = { vm.updateWork { w -> w.copy(readBooks = w.readBooks.filter { it.id != b.id }) }; onDismiss() }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -645,7 +821,7 @@ private fun ReadBookDialog(vm: MainViewModel, b: Book, onDismiss: () -> Unit) {
             TextButton(enabled = title.isNotBlank(), onClick = {
                 val today = vm.today.toString()
                 val nb = b.copy(title = title.trim(), author = author.trim(), kind = kind, total = total.toIntOrNull() ?: 0, current = current.toIntOrNull() ?: 0,
-                    status = status, rating = rating, note = note.trim(),
+                    status = status, rating = rating, note = note.trim(), quotes = quotes,
                     started = b.started ?: if (status == BookStatus.ACTIVE) today else null,
                     finished = if (status == BookStatus.DONE) (b.finished ?: today) else null)
                 vm.updateWork { w -> w.copy(readBooks = if (exists) w.readBooks.map { if (it.id == b.id) nb else it } else w.readBooks + nb) }
@@ -670,11 +846,16 @@ fun ChoresTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 OutlinedButton(onClick = { vm.updateWork { it.copy(chores = Chores.STARTERS.map { c -> c.copy(id = newId()) }) } }) { Text("Добавить типовые дела") }
             }
         }
-        val sorted = w.chores.sortedBy { it.daysLeft(today) }
+        if (w.chores.isNotEmpty() && w.chores.none { it.months.isNotEmpty() }) item {
+            TextButton(onClick = { vm.updateWork { it.copy(chores = it.chores + Chores.SEASONAL.map { c -> c.copy(id = newId()) }) } }) { Text("+ Добавить сезонные дела (окна, вещи, кондиционер)") }
+        }
+        val sorted = w.chores.filter { it.inSeason(today) }.sortedBy { it.daysLeft(today) }
+        val off = w.chores.filter { !it.inSeason(today) }
         val groups = listOf(
             "Сегодня и просрочено" to sorted.filter { it.daysLeft(today) <= 0 },
             "На этой неделе" to sorted.filter { it.daysLeft(today) in 1..7 },
             "Позже" to sorted.filter { it.daysLeft(today) > 7 },
+            "Не сезон" to off,
         )
         groups.forEach { (title, list) ->
             if (list.isNotEmpty()) {
@@ -714,6 +895,7 @@ private fun ChoreDialog(vm: MainViewModel, c: Chore, onDismiss: () -> Unit) {
     var room by remember { mutableStateOf(c.room) }
     var every by remember { mutableStateOf(c.everyDays.toString()) }
     var people by remember { mutableStateOf(c.people) }
+    var months by remember { mutableStateOf(c.months) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (exists) "Дело" else "Новое дело") },
@@ -723,6 +905,10 @@ private fun ChoreDialog(vm: MainViewModel, c: Chore, onDismiss: () -> Unit) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) { Chores.ROOMS.forEach { r -> FilterChip(room == r, { room = if (room == r) "" else r }, label = { Text(r) }) } }
                 OutlinedTextField(every, { every = it.filter(Char::isDigit) }, label = { Text("Раз в сколько дней") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) { listOf(1, 2, 7, 14, 30, 90, 180).forEach { d -> FilterChip(every == d.toString(), { every = d.toString() }, label = { Text(if (d == 1) "каждый день" else "$d дн.") }) } }
+                Text("Только в месяцы (сезонное)", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    (1..12).forEach { m -> FilterChip(m in months, { months = if (m in months) months - m else (months + m).sorted() }, label = { Text(Fmt.monthName(m).take(3)) }) }
+                }
                 Text("Очередь (по кругу)", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     vm.work.everyone.forEach { p -> FilterChip(p.id in people, { people = if (p.id in people) people - p.id else people + p.id }, label = { Text(p.name) }) }
@@ -732,7 +918,7 @@ private fun ChoreDialog(vm: MainViewModel, c: Chore, onDismiss: () -> Unit) {
         },
         confirmButton = {
             TextButton(enabled = title.isNotBlank(), onClick = {
-                val nc = c.copy(title = title.trim(), room = room, everyDays = every.toIntOrNull()?.coerceAtLeast(1) ?: 7, people = people)
+                val nc = c.copy(title = title.trim(), room = room, everyDays = every.toIntOrNull()?.coerceAtLeast(1) ?: 7, people = people, months = months)
                 vm.updateWork { w -> w.copy(chores = if (exists) w.chores.map { if (it.id == c.id) nc else it } else w.chores + nc) }
                 onDismiss()
             }) { Text("Сохранить") }
@@ -765,12 +951,14 @@ fun PlantsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     Column(Modifier.weight(1f)) {
                         Text(p.name + if (p.place.isNotBlank()) " · ${p.place}" else "", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            (if (wi <= 0) "💧 полить сегодня" else "💧 через $wi дн.") + (fi?.let { if (it <= 0) " · 🌱 подкормить" else "" } ?: ""),
+                            (if (wi <= 0) "💧 полить сегодня" else "💧 через $wi дн.") + (fi?.let { if (it <= 0) " · 🌱 подкормить" else "" } ?: "") +
+                                (p.repotIn(today)?.let { if (it <= 0) " · 🪴 пора пересадить" else "" } ?: ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = if (wi < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     if (fi != null && fi <= 0) TextButton(onClick = { vm.updateWork { x -> x.copy(plants = x.plants.map { if (it.id == p.id) it.copy(lastFeed = today.toString()) else it }) } }) { Text("🌱") }
+                    p.repotIn(today)?.takeIf { it <= 0 }?.let { TextButton(onClick = { vm.updateWork { x -> x.copy(plants = x.plants.map { if (it.id == p.id) it.copy(lastRepot = today.toString()) else it }) }; vm.message = "🪴 Пересажено" }) { Text("Пересадил") } }
                     TextButton(onClick = { vm.updateWork { x -> x.copy(plants = x.plants.map { if (it.id == p.id) it.copy(lastWater = today.toString()) else it }) } }) { Text("Полил") }
                 }
             }
@@ -787,6 +975,7 @@ private fun PlantDialog(vm: MainViewModel, p: Plant, onDismiss: () -> Unit) {
     var emoji by remember { mutableStateOf(p.emoji) }
     var water by remember { mutableStateOf(p.waterDays.toString()) }
     var feed by remember { mutableStateOf(p.feedDays?.toString() ?: "") }
+    var repot by remember { mutableStateOf(p.repotMonths?.toString() ?: "") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (exists) "Растение" else "Новое растение") },
@@ -802,17 +991,45 @@ private fun PlantDialog(vm: MainViewModel, p: Plant, onDismiss: () -> Unit) {
                     OutlinedTextField(water, { water = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Полив, дн.") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     OutlinedTextField(feed, { feed = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Подкормка, дн.") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 }
+                OutlinedTextField(repot, { repot = it.filter(Char::isDigit) }, label = { Text("Пересадка раз в N месяцев (обычно 12–24)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 if (exists) TextButton(onClick = { vm.updateWork { w -> w.copy(plants = w.plants.filter { it.id != p.id }) }; onDismiss() }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
             TextButton(enabled = name.isNotBlank(), onClick = {
                 val np = p.copy(name = name.trim(), place = place.trim(), emoji = emoji, waterDays = water.toIntOrNull()?.coerceAtLeast(1) ?: 7, feedDays = feed.toIntOrNull()?.takeIf { it > 0 },
-                    lastWater = p.lastWater ?: vm.today.toString())
+                    lastWater = p.lastWater ?: vm.today.toString(), repotMonths = repot.toIntOrNull()?.takeIf { it > 0 }, lastRepot = p.lastRepot ?: vm.today.toString())
                 vm.updateWork { w -> w.copy(plants = if (exists) w.plants.map { if (it.id == p.id) np else it } else w.plants + np) }
                 onDismiss()
             }) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
+}
+
+
+/** Таймер отдыха между подходами: вибрация в конце. */
+@Composable
+private fun RestTimer() {
+    val ctx = LocalContext.current
+    var left by remember { mutableStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(left > 0) {
+        while (left > 0) { kotlinx.coroutines.delay(1000); left-- }
+    }
+    androidx.compose.runtime.LaunchedEffect(left) {
+        if (left == 0) return@LaunchedEffect
+        if (left == 1) {
+            kotlinx.coroutines.delay(1000)
+            runCatching {
+                val v = if (android.os.Build.VERSION.SDK_INT >= 31) (ctx.getSystemService(android.os.VibratorManager::class.java)).defaultVibrator
+                else @Suppress("DEPRECATION") ctx.getSystemService(android.os.Vibrator::class.java)
+                v?.vibrate(android.os.VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1))
+            }
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(if (left > 0) "⏱ Отдых ${left / 60}:${"%02d".format(left % 60)}" else "⏱ Отдых:", style = MaterialTheme.typography.labelLarge)
+        if (left > 0) TextButton(onClick = { left = 0 }) { Text("Стоп") }
+        else listOf(60, 90, 120, 180).forEach { s -> TextButton(onClick = { left = s }) { Text(if (s < 120) "$s с" else "${s / 60} мин") } }
+    }
 }

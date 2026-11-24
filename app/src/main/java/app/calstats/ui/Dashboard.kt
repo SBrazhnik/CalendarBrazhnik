@@ -562,7 +562,7 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
             TileInfo("$done/${w.readingGoal}", "за год", cur?.let { "📖 ${it.title}" } ?: "добавьте книгу", progress = done.toFloat() / maxOf(1, w.readingGoal))
         }
         Tab.CHORES -> {
-            val due = w.chores.count { it.daysLeft(today) <= 0 }
+            val due = w.chores.count { it.inSeason(today) && it.daysLeft(today) <= 0 }
             TileInfo("$due", "на сегодня", w.chores.minByOrNull { it.daysLeft(today) }?.title ?: "добавьте дела", alert = w.chores.any { it.daysLeft(today) < -2 })
         }
         Tab.PLANTS -> {
