@@ -59,6 +59,7 @@ object Changelog {
     data class Entry(val build: Int, val date: String, val title: String, val items: List<String>)
 
     val entries = listOf(
+        Entry(64, "24.11.2026", "Новый логотип", listOf("🦋 Бабочка вместо галочки с листом: иконка приложения, логотип и значок уведомлений")),
         Entry(
             63, "24.11.2026", "Меню, тренировки, поездки, чтение — новые возможности",
             listOf(
