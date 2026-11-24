@@ -150,7 +150,7 @@ object ModulesAnalysisMath {
         }
         if (enabled(Tab.READING)) {
             val logs = w.readLogs.filter { inR(d(it.date)) }
-            val fin = w.books.filter { inR(d(it.finished)) && it.status == app.calstats.work.BookStatus.DONE }
+            val fin = w.readBooks.filter { inR(d(it.finished)) && it.status == app.calstats.work.BookStatus.DONE }
             if (logs.isNotEmpty() || fin.isNotEmpty()) out += ModuleStat(Tab.READING, "Чтение", "${fin.size} прочитано", listOfNotNull(
                 if (logs.isNotEmpty()) "Дней с чтением: ${logs.map { it.date }.distinct().size}, страниц: ${logs.sumOf { it.amount }}" else null,
             ) + fin.map { "📖 ${it.title}" })

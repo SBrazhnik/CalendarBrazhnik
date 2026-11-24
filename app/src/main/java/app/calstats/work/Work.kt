@@ -320,7 +320,7 @@ data class Workspace(
     val exercises: List<Exercise> = emptyList(),
     val workouts: List<WorkoutLog> = emptyList(),
     val trips: List<Trip> = emptyList(),
-    val books: List<Book> = emptyList(),
+    val readBooks: List<Book> = emptyList(),
     val readLogs: List<ReadLog> = emptyList(),
     val readingGoal: Int = 12,
     val chores: List<Chore> = emptyList(),

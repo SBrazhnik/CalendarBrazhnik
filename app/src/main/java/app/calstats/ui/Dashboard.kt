@@ -558,7 +558,7 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
         }
         Tab.READING -> {
             val done = app.calstats.work.Reading.doneThisYear(w, today.year)
-            val cur = w.books.firstOrNull { it.status == app.calstats.work.BookStatus.ACTIVE }
+            val cur = w.readBooks.firstOrNull { it.status == app.calstats.work.BookStatus.ACTIVE }
             TileInfo("$done/${w.readingGoal}", "за год", cur?.let { "📖 ${it.title}" } ?: "добавьте книгу", progress = done.toFloat() / maxOf(1, w.readingGoal))
         }
         Tab.CHORES -> {

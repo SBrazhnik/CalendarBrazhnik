@@ -551,9 +551,9 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
         }
-        if (w.books.isEmpty()) item { Tip("Добавьте книгу или курс. Отмечайте, сколько прочитали, — приложение посчитает прогресс, серию дней и цель на год.") }
+        if (w.readBooks.isEmpty()) item { Tip("Добавьте книгу или курс. Отмечайте, сколько прочитали, — приложение посчитает прогресс, серию дней и цель на год.") }
         BookStatus.entries.forEach { st ->
-            val list = w.books.filter { it.status == st }.let { l -> if (st == BookStatus.DONE) l.sortedByDescending { it.finished } else l.sortedByDescending { it.created } }
+            val list = w.readBooks.filter { it.status == st }.let { l -> if (st == BookStatus.DONE) l.sortedByDescending { it.finished } else l.sortedByDescending { it.created } }
             if (list.isNotEmpty()) {
                 item { Head("${st.title} · ${list.size}") }
                 items(list, key = { it.id }) { b ->
@@ -600,7 +600,7 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     val cur = (b.current + add).let { if (b.total > 0) it.coerceAtMost(b.total) else it }
                     val fin = b.total in 1..cur
                     w0.copy(
-                        books = w0.books.map { if (it.id == b.id) it.copy(current = cur, status = if (fin) BookStatus.DONE else it.status, finished = if (fin) vm.today.toString() else it.finished) else it },
+                        readBooks = w0.readBooks.map { if (it.id == b.id) it.copy(current = cur, status = if (fin) BookStatus.DONE else it.status, finished = if (fin) vm.today.toString() else it.finished) else it },
                         readLogs = w0.readLogs + ReadLog(vm.today.toString(), b.id, add),
                     )
                 }
@@ -614,7 +614,7 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
 
 @Composable
 private fun ReadBookDialog(vm: MainViewModel, b: Book, onDismiss: () -> Unit) {
-    val exists = vm.work.books.any { it.id == b.id }
+    val exists = vm.work.readBooks.any { it.id == b.id }
     var title by remember { mutableStateOf(b.title) }
     var author by remember { mutableStateOf(b.author) }
     var kind by remember { mutableStateOf(b.kind) }
@@ -638,7 +638,7 @@ private fun ReadBookDialog(vm: MainViewModel, b: Book, onDismiss: () -> Unit) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) { BookStatus.entries.forEach { s -> FilterChip(status == s, { status = s }, label = { Text(s.title) }) } }
                 if (status == BookStatus.DONE) Row { (1..5).forEach { i -> Text(if (i <= rating) "★" else "☆", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.clickable { rating = i }.padding(2.dp)) } }
                 OutlinedTextField(note, { note = it }, label = { Text("Мысли, цитаты") }, minLines = 2, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
-                if (exists) TextButton(onClick = { vm.updateWork { w -> w.copy(books = w.books.filter { it.id != b.id }) }; onDismiss() }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
+                if (exists) TextButton(onClick = { vm.updateWork { w -> w.copy(readBooks = w.readBooks.filter { it.id != b.id }) }; onDismiss() }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
@@ -648,7 +648,7 @@ private fun ReadBookDialog(vm: MainViewModel, b: Book, onDismiss: () -> Unit) {
                     status = status, rating = rating, note = note.trim(),
                     started = b.started ?: if (status == BookStatus.ACTIVE) today else null,
                     finished = if (status == BookStatus.DONE) (b.finished ?: today) else null)
-                vm.updateWork { w -> w.copy(books = if (exists) w.books.map { if (it.id == b.id) nb else it } else w.books + nb) }
+                vm.updateWork { w -> w.copy(readBooks = if (exists) w.readBooks.map { if (it.id == b.id) nb else it } else w.readBooks + nb) }
                 onDismiss()
             }) { Text("Сохранить") }
         },

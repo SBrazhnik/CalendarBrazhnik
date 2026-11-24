@@ -125,7 +125,7 @@ object SearchIndex {
         if (vm.isEnabled(Tab.MEALS)) w.recipes.filter { m(it.title, it.ingredients.joinToString(" ") { i -> i.name }, it.steps) }.forEach { r ->
             out += Hit("Рецепты", r.emoji, r.title, r.ingredients.take(4).joinToString { it.name }, 0) { vm.subViews["meals"] = "RECIPES"; go(Tab.MEALS) }
         }
-        if (vm.isEnabled(Tab.READING)) w.books.filter { m(it.title, it.author, it.note) }.forEach { b ->
+        if (vm.isEnabled(Tab.READING)) w.readBooks.filter { m(it.title, it.author, it.note) }.forEach { b ->
             out += Hit("Чтение", b.kind.emoji, b.title, listOf(b.author, b.status.title).filter { it.isNotBlank() }.joinToString(" · "), b.created / 86_400_000) { go(Tab.READING) }
         }
         if (vm.isEnabled(Tab.TRIPS)) w.trips.filter { m(it.title, it.place, it.note, it.packing.joinToString(" ") { i -> i.text }) }.forEach { t ->

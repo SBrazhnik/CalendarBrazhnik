@@ -161,7 +161,7 @@ data class Book(
 data class ReadLog(val date: String, val bookId: String, val amount: Int)
 
 object Reading {
-    fun doneThisYear(w: Workspace, year: Int) = w.books.count { it.status == BookStatus.DONE && it.finished?.startsWith("$year") == true }
+    fun doneThisYear(w: Workspace, year: Int) = w.readBooks.count { it.status == BookStatus.DONE && it.finished?.startsWith("$year") == true }
     fun streak(w: Workspace, today: LocalDate): Int {
         val days = w.readLogs.map { it.date }.toHashSet()
         var d = if (today.toString() in days) today else today.minusDays(1)
