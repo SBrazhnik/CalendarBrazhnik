@@ -141,6 +141,20 @@ object ModulesAnalysisMath {
                 )
             }
         }
+        if (enabled(Tab.WORKOUTS)) {
+            val l = w.workouts.filter { inR(d(it.date)) }
+            if (l.isNotEmpty()) out += ModuleStat(Tab.WORKOUTS, "Тренировки", "${l.size}", listOfNotNull(
+                l.sumOf { it.minutes }.takeIf { it > 0 }?.let { "Время: ${hm(it)}" },
+                l.sumOf { app.calstats.work.Training.volume(it) }.takeIf { it > 0 }?.let { "Поднято: ${"%,.0f".format(it).replace(',', ' ')} кг" },
+            ))
+        }
+        if (enabled(Tab.READING)) {
+            val logs = w.readLogs.filter { inR(d(it.date)) }
+            val fin = w.books.filter { inR(d(it.finished)) && it.status == app.calstats.work.BookStatus.DONE }
+            if (logs.isNotEmpty() || fin.isNotEmpty()) out += ModuleStat(Tab.READING, "Чтение", "${fin.size} прочитано", listOfNotNull(
+                if (logs.isNotEmpty()) "Дней с чтением: ${logs.map { it.date }.distinct().size}, страниц: ${logs.sumOf { it.amount }}" else null,
+            ) + fin.map { "📖 ${it.title}" })
+        }
         // Питомцы
         if (enabled(Tab.PETS)) {
             val ev = w.petEvents.filter { inR(d(it.date)) }

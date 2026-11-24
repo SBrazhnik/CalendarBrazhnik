@@ -86,6 +86,12 @@ fun moduleColor(t: Tab): Color = when (t) {
     Tab.ANALYSIS -> Color(0xFF6C4F7A)
     Tab.WISHES -> Color(0xFFB0656B)
     Tab.NOTES -> Color(0xFF3F7C7A)
+    Tab.MEALS -> Color(0xFFB5743A)
+    Tab.WORKOUTS -> Color(0xFF9A4A4A)
+    Tab.TRIPS -> Color(0xFF3F6E9A)
+    Tab.READING -> Color(0xFF6A5A8C)
+    Tab.CHORES -> Color(0xFF4F7C6A)
+    Tab.PLANTS -> Color(0xFF4F8A3F)
 }
 
 @Composable
@@ -113,6 +119,12 @@ fun ModuleIcon(t: Tab, selected: Boolean = false, size: Dp = 24.dp, tint: Color?
         Tab.ANALYSIS -> Icon(painterResource(R.drawable.ic_tab_stats), null, m, tint = c)
         Tab.WISHES -> Icon(painterResource(R.drawable.ic_tab_gift), null, m, tint = c)
         Tab.NOTES -> Icon(painterResource(R.drawable.ic_tab_notes), null, m, tint = c)
+        Tab.MEALS -> Icon(painterResource(R.drawable.ic_meals), null, m, tint = c)
+        Tab.WORKOUTS -> Icon(painterResource(R.drawable.ic_workout), null, m, tint = c)
+        Tab.TRIPS -> Icon(painterResource(R.drawable.ic_trip), null, m, tint = c)
+        Tab.READING -> Icon(painterResource(R.drawable.ic_reading), null, m, tint = c)
+        Tab.CHORES -> Icon(painterResource(R.drawable.ic_chores), null, m, tint = c)
+        Tab.PLANTS -> Icon(painterResource(R.drawable.ic_plant), null, m, tint = c)
     }
 }
 

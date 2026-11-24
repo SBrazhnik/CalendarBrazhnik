@@ -30,7 +30,7 @@ data class TrashEntry(
 object Trash {
     private const val DAYS = 30
     private const val MAX = 80
-    private val FIELDS = listOf("people", "groups", "projects", "sprints", "issues", "books", "expenses", "wishLists", "wishes", "notes", "accounts", "finCategories", "transactions", "budgets", "recurrings", "goals", "habits", "foodLog", "customFoods", "waterLog", "weightLog", "documents", "counterparties", "debts", "fasts", "meds", "cycles", "shopLists", "shopItems", "lifeGoals", "cars", "carEvents", "meters", "meterReadings", "pets", "petEvents", "cards", "cashback")
+    private val FIELDS = listOf("people", "groups", "projects", "sprints", "issues", "books", "expenses", "wishLists", "wishes", "notes", "accounts", "finCategories", "transactions", "budgets", "recurrings", "goals", "habits", "foodLog", "customFoods", "waterLog", "weightLog", "documents", "counterparties", "debts", "fasts", "meds", "cycles", "shopLists", "shopItems", "lifeGoals", "cars", "carEvents", "meters", "meterReadings", "pets", "petEvents", "cards", "cashback", "recipes", "mealPlans", "exercises", "workouts", "trips", "books", "chores", "plants")
     val NAMES = mapOf(
         "people" to "человек",
         "groups" to "группа",
@@ -70,9 +70,11 @@ object Trash {
         "petEvents" to "запись питомца",
         "cards" to "карта",
         "cashback" to "кешбэк",
+        "recipes" to "рецепт", "mealPlans" to "блюдо в меню", "exercises" to "упражнение", "workouts" to "тренировка",
+        "trips" to "поездка", "books" to "книга", "chores" to "дело по дому", "plants" to "растение",
     )
 
-    fun count(w: Workspace): Int = w.people.size + w.groups.size + w.projects.size + w.sprints.size + w.issues.size + w.books.size + w.expenses.size + w.wishLists.size + w.wishes.size + w.notes.size + w.accounts.size + w.finCategories.size + w.transactions.size + w.budgets.size + w.recurrings.size + w.goals.size + w.habits.size + w.foodLog.size + w.customFoods.size + w.waterLog.size + w.weightLog.size + w.documents.size + w.counterparties.size + w.debts.size + w.fasts.size + w.meds.size + w.cycles.size + w.shopLists.size + w.shopItems.size + w.lifeGoals.size + w.cars.size + w.carEvents.size + w.meters.size + w.meterReadings.size + w.pets.size + w.petEvents.size + w.cards.size + w.cashback.size
+    fun count(w: Workspace): Int = w.people.size + w.groups.size + w.projects.size + w.sprints.size + w.issues.size + w.books.size + w.expenses.size + w.wishLists.size + w.wishes.size + w.notes.size + w.accounts.size + w.finCategories.size + w.transactions.size + w.budgets.size + w.recurrings.size + w.goals.size + w.habits.size + w.foodLog.size + w.customFoods.size + w.waterLog.size + w.weightLog.size + w.documents.size + w.counterparties.size + w.debts.size + w.fasts.size + w.meds.size + w.cycles.size + w.shopLists.size + w.shopItems.size + w.lifeGoals.size + w.cars.size + w.carEvents.size + w.meters.size + w.meterReadings.size + w.pets.size + w.petEvents.size + w.cards.size + w.cashback.size + w.recipes.size + w.mealPlans.size + w.exercises.size + w.workouts.size + w.trips.size + w.books.size + w.chores.size + w.plants.size
 
     private fun file(ctx: Context) = File(ctx.filesDir, "trash.json")
     private val ser = ListSerializer(TrashEntry.serializer())

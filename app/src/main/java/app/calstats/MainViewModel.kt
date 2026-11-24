@@ -76,6 +76,12 @@ enum class Tab(val title: String, val description: String) {
     ANALYSIS("Анализ", "Дни и часы по направлениям"),
     WISHES("Желания", "Списки желаний и подарков"),
     NOTES("Заметки", "Заметки, чек-листы, импорт из других приложений"),
+    MEALS("Меню", "Меню на неделю, рецепты и список продуктов одним нажатием"),
+    WORKOUTS("Тренировки", "Упражнения, подходы и веса, прогресс и рекорды"),
+    TRIPS("Поездки", "Чек-лист вещей, брони, бюджет поездки, проверка документов"),
+    READING("Чтение", "Книги и курсы: прогресс, цель на год, серия дней"),
+    CHORES("Дела по дому", "Уборка и регулярные дела по графику, очередь в семье"),
+    PLANTS("Растения", "Полив и подкормка по расписанию"),
     ;
 
     val isModule: Boolean get() = this != HOME
@@ -205,11 +211,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var disabledModules by mutableStateOf(
         loadTabs("modules_disabled", emptyList()).toSet().let { d ->
             // Авто, Дом и Питомцы нужны не всем — включаются в «Модулях».
+            var r = d
             if (!uiPrefs.getBoolean("migr_life", false)) {
-                val nd = d + listOf(Tab.CAR, Tab.HOME_UTIL, Tab.PETS)
-                uiPrefs.edit().putBoolean("migr_life", true).putString("modules_disabled", nd.joinToString(",") { it.name }).apply()
-                nd
-            } else d
+                r = r + listOf(Tab.CAR, Tab.HOME_UTIL, Tab.PETS)
+                uiPrefs.edit().putBoolean("migr_life", true).putString("modules_disabled", r.joinToString(",") { it.name }).apply()
+            }
+            // Новые модули включаются по желанию в меню («Порядок») или в «Модулях».
+            if (!uiPrefs.getBoolean("migr_extra6", false)) {
+                r = r + listOf(Tab.MEALS, Tab.WORKOUTS, Tab.TRIPS, Tab.READING, Tab.CHORES, Tab.PLANTS)
+                uiPrefs.edit().putBoolean("migr_extra6", true).putString("modules_disabled", r.joinToString(",") { it.name }).apply()
+            }
+            r
         },
     )
         private set

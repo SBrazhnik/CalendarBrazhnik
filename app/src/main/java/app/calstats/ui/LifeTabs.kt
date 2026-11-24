@@ -112,7 +112,7 @@ import java.time.temporal.ChronoUnit
 // ---------- общий каркас ----------
 
 @Composable
-private fun ModuleScaffold(
+internal fun ModuleScaffold(
     title: String,
     snackbar: SnackbarHostState,
     fab: Pair<String, () -> Unit>? = null,
@@ -142,7 +142,7 @@ private fun ModuleScaffold(
 }
 
 @Composable
-private fun Flat(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
+internal fun Flat(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
     if (onClick != null) Card(onClick = onClick, modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) { content() }
     else Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) { content() }
 }
@@ -330,7 +330,7 @@ fun GoalsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
 }
 
 @Composable
-private fun Bar(f: Float, c: Color) {
+internal fun Bar(f: Float, c: Color) {
     Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(c.copy(alpha = 0.16f))) {
         Box(Modifier.fillMaxWidth(f.coerceIn(0f, 1f)).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(c))
     }

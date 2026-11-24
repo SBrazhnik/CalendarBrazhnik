@@ -387,7 +387,8 @@ private fun LargeCard(vm: MainViewModel, t: Tab) {
         Tab.ANALYSIS -> AnalysisSummary(vm)
         Tab.WISHES -> WishesSummary(vm)
         Tab.NOTES -> NotesSummary(vm)
-        Tab.ACCOUNTS, Tab.GUIDE, Tab.SHOPPING, Tab.CARDS, Tab.GOALS, Tab.JOURNAL, Tab.CAR, Tab.HOME_UTIL, Tab.PETS -> MediumTile(vm, t, Modifier.fillMaxWidth())
+        Tab.ACCOUNTS, Tab.GUIDE, Tab.SHOPPING, Tab.CARDS, Tab.GOALS, Tab.JOURNAL, Tab.CAR, Tab.HOME_UTIL, Tab.PETS,
+        Tab.MEALS, Tab.WORKOUTS, Tab.TRIPS, Tab.READING, Tab.CHORES, Tab.PLANTS -> MediumTile(vm, t, Modifier.fillMaxWidth())
         Tab.HOME -> {}
     }
 }
@@ -535,6 +536,38 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
         Tab.PETS -> {
             val up = app.calstats.work.Pets.upcoming(w.petEvents, today, 14)
             TileInfo("${w.pets.size}", "питомцев", up.firstOrNull()?.let { "${it.type.emoji} ${it.type.title.lowercase()} скоро" } ?: "всё по графику", alert = up.isNotEmpty())
+        }
+        Tab.MEALS -> {
+            val today0 = w.mealPlans.filter { it.date == today.toString() }
+            val next = today0.sortedBy { it.slot.ordinal }.firstOrNull()
+            TileInfo("${today0.size}", "блюд сегодня", next?.let { p -> "${p.slot.emoji} " + (w.recipes.firstOrNull { it.id == p.recipeId }?.title ?: p.text) } ?: "спланируйте меню")
+        }
+        Tab.WORKOUTS -> {
+            val n = app.calstats.work.Training.weekCount(w, today)
+            val last = w.workouts.maxByOrNull { it.date }
+            TileInfo("$n", "за неделю", last?.let { "последняя: ${Fmt.dayTitle(java.time.LocalDate.parse(it.date), today).lowercase()}" } ?: "запишите тренировку")
+        }
+        Tab.TRIPS -> {
+            val t0 = w.trips.filter { !it.endDate.isBefore(today) }.minByOrNull { it.start }
+            if (t0 == null) TileInfo("—", "", "поездок не запланировано")
+            else {
+                val d = app.calstats.work.Trips.daysLeft(t0, today)
+                TileInfo(if (d > 0) "$d" else "✈", if (d > 0) Fmt.plural(d, "день", "дня", "дней") else "в пути", t0.title,
+                    progress = if (t0.packing.isEmpty()) null else t0.packing.count { it.done }.toFloat() / t0.packing.size)
+            }
+        }
+        Tab.READING -> {
+            val done = app.calstats.work.Reading.doneThisYear(w, today.year)
+            val cur = w.books.firstOrNull { it.status == app.calstats.work.BookStatus.ACTIVE }
+            TileInfo("$done/${w.readingGoal}", "за год", cur?.let { "📖 ${it.title}" } ?: "добавьте книгу", progress = done.toFloat() / maxOf(1, w.readingGoal))
+        }
+        Tab.CHORES -> {
+            val due = w.chores.count { it.daysLeft(today) <= 0 }
+            TileInfo("$due", "на сегодня", w.chores.minByOrNull { it.daysLeft(today) }?.title ?: "добавьте дела", alert = w.chores.any { it.daysLeft(today) < -2 })
+        }
+        Tab.PLANTS -> {
+            val due = w.plants.count { it.waterIn(today) <= 0 }
+            TileInfo("$due", "полить", if (w.plants.isEmpty()) "добавьте растения" else if (due == 0) "все политы ✓" else w.plants.filter { it.waterIn(today) <= 0 }.joinToString { it.name }, alert = due > 0)
         }
         Tab.HOME -> TileInfo("", "", "")
     }

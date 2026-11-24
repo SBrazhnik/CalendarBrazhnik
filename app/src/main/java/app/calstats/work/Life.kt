@@ -75,6 +75,8 @@ object GoalAuto {
             Option("weight", "⚖ Вес", "Целевой вес, кг") +
             Option("debts", "🤝 Закрыть свои долги", null) +
             Option("journal", "📔 Дни с записью в дневнике", "Сколько дней за год") +
+            Option("books", "📖 Прочитать книг за год", "Сколько книг") +
+            Option("workouts", "🏋 Тренировок за год", "Сколько тренировок") +
             w.projects.filter { !it.archived }.map { Option("project:${it.id}", "✅ Задачи проекта «${it.name}»", null) }
 
     /** Стартовое значение при привязке (для веса и долгов). */
@@ -114,6 +116,14 @@ object GoalAuto {
                 val n = w.journal.count { it.date.startsWith("${g.year}") && (it.text.isNotBlank() || it.best.isNotBlank() || it.gratitude.isNotEmpty()) }
                 val t = g.target ?: 200.0
                 P((n / t).toFloat(), "$n из ${t.toInt()} дней")
+            }
+            link == "books" -> {
+                val n = Reading.doneThisYear(w, g.year); val t = g.target ?: w.readingGoal.toDouble()
+                P((n / t).toFloat(), "$n из ${t.toInt()} книг")
+            }
+            link == "workouts" -> {
+                val n = w.workouts.count { it.date.startsWith("${g.year}") }; val t = g.target ?: 100.0
+                P((n / t).toFloat(), "$n из ${t.toInt()} тренировок")
             }
             link.startsWith("project:") -> {
                 val l = w.issues.filter { it.projectId == link.removePrefix("project:") }

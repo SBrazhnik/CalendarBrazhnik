@@ -122,6 +122,20 @@ object SearchIndex {
         if (vm.isEnabled(Tab.WISHES)) w.wishes.filter { m(it.title, it.note, it.link) }.forEach { x ->
             out += Hit("Желания", "🎁", x.title, w.wishLists.firstOrNull { it.id == x.listId }?.title ?: "", x.updated / 86_400_000) { vm.push(Screen.WishListDetail(x.listId)) }
         }
+        if (vm.isEnabled(Tab.MEALS)) w.recipes.filter { m(it.title, it.ingredients.joinToString(" ") { i -> i.name }, it.steps) }.forEach { r ->
+            out += Hit("Рецепты", r.emoji, r.title, r.ingredients.take(4).joinToString { it.name }, 0) { vm.subViews["meals"] = "RECIPES"; go(Tab.MEALS) }
+        }
+        if (vm.isEnabled(Tab.READING)) w.books.filter { m(it.title, it.author, it.note) }.forEach { b ->
+            out += Hit("Чтение", b.kind.emoji, b.title, listOf(b.author, b.status.title).filter { it.isNotBlank() }.joinToString(" · "), b.created / 86_400_000) { go(Tab.READING) }
+        }
+        if (vm.isEnabled(Tab.TRIPS)) w.trips.filter { m(it.title, it.place, it.note, it.packing.joinToString(" ") { i -> i.text }) }.forEach { t ->
+            out += Hit("Поездки", "✈", t.title, Fmt.date(t.startDate) + if (t.place.isNotBlank()) " · ${t.place}" else "", t.startDate.toEpochDay()) { vm.subViews["trip"] = t.id; go(Tab.TRIPS) }
+        }
+        if (vm.isEnabled(Tab.CHORES)) w.chores.filter { m(it.title, it.room) }.forEach { c -> out += Hit("Дела по дому", "🧹", c.title, c.room, 0) { go(Tab.CHORES) } }
+        if (vm.isEnabled(Tab.PLANTS)) w.plants.filter { m(it.name, it.place) }.forEach { p -> out += Hit("Растения", p.emoji, p.name, p.place, 0) { go(Tab.PLANTS) } }
+        if (vm.isEnabled(Tab.WORKOUTS)) w.exercises.filter { m(it.name, it.group) }.forEach { e ->
+            out += Hit("Тренировки", "🏋", e.name, app.calstats.work.Training.best(w, e.id)?.let { "рекорд ${it.weight} кг × ${it.reps}" } ?: e.group, 0) { go(Tab.WORKOUTS) }
+        }
         w.people.filter { m(it.name, it.note, it.phone) }.forEach { p -> out += Hit("Люди", "👤", p.name, listOf(p.note, p.phone).filter { it.isNotBlank() }.joinToString(" · "), 0) { vm.push(Screen.People) } }
         return out
     }

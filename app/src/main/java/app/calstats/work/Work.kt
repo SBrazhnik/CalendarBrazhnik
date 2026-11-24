@@ -315,6 +315,16 @@ data class Workspace(
     val petEvents: List<PetEvent> = emptyList(),
     val cards: List<LoyaltyCard> = emptyList(),
     val cashback: List<Cashback> = emptyList(),
+    val recipes: List<Recipe> = emptyList(),
+    val mealPlans: List<MealPlan> = emptyList(),
+    val exercises: List<Exercise> = emptyList(),
+    val workouts: List<WorkoutLog> = emptyList(),
+    val trips: List<Trip> = emptyList(),
+    val books: List<Book> = emptyList(),
+    val readLogs: List<ReadLog> = emptyList(),
+    val readingGoal: Int = 12,
+    val chores: List<Chore> = emptyList(),
+    val plants: List<Plant> = emptyList(),
 ) {
     fun category(id: String?) = finCategories.firstOrNull { it.id == id }
     fun account(id: String?) = accounts.firstOrNull { it.id == id }

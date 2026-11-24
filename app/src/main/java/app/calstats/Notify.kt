@@ -239,6 +239,15 @@ object Notify {
         if (today.dayOfMonth in 20..25 && w.meters.isNotEmpty() &&
             w.meters.any { m -> w.meterReadings.none { it.meterId == m.id && it.date.startsWith(today.toString().take(7)) } }) out += "💧 Передайте показания счётчиков"
         out += DocsReminder.lines(ctx, today)
+        w.chores.filter { it.daysLeft(today) <= 0 }.takeIf { it.isNotEmpty() }?.let { l -> out += "🧹 По дому: " + l.take(3).joinToString { it.title.lowercase() } + if (l.size > 3) " и ещё ${l.size - 3}" else "" }
+        w.plants.filter { it.waterIn(today) <= 0 }.takeIf { it.isNotEmpty() }?.let { l -> out += "🪴 Полить: " + l.joinToString { it.name } }
+        w.trips.filter { app.calstats.work.Trips.daysLeft(it, today) in listOf(1L, 3L, 7L) }.forEach { t ->
+            val left = t.packing.count { !it.done }
+            out += "✈ Через ${app.calstats.work.Trips.daysLeft(t, today)} дн. «${t.title}»" + if (left > 0) " — собрать ещё $left" else ""
+        }
+        w.mealPlans.filter { it.date == today.toString() }.sortedBy { it.slot.ordinal }.takeIf { it.isNotEmpty() }?.let { l ->
+            out += "🍽 Меню: " + l.joinToString { p -> w.recipes.firstOrNull { it.id == p.recipeId }?.title ?: p.text }
+        }
         val habits = w.habits.filter { !it.archived && it.kind == HabitKind.DO && it.scheduled(today) }
         if (habits.isNotEmpty()) out += "✅ Привычки на сегодня: ${habits.size}"
         return out
