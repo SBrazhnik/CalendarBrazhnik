@@ -96,6 +96,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.derivedStateOf
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -163,14 +164,25 @@ fun ReaderScreen(vm: MainViewModel, bookId: String) {
             ) }
         }
     }
+    // Полный экран: панели прячутся, появляются вместе с меню
+    val view = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(controls, settings, contents) {
+        val win = (ctx as? Activity)?.window
+        val ic = win?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
+        ic?.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (controls || settings || contents) ic?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        else ic?.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        onDispose { ic?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars()) }
+    }
     BackHandler(controls || settings || contents) { controls = false; settings = false; contents = false }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(th.bg)) {
         val density = LocalDensity.current
-        val topInset = WindowInsets.statusBars.getTop(density)
-        val bottomInset = WindowInsets.navigationBars.getBottom(density)
+        // Полноэкранный режим: размер страницы не зависит от системных панелей — вёрстка стабильная
+        val topInset = with(density) { 34.dp.roundToPx() }
+        val bottomInset = with(density) { 8.dp.roundToPx() }
         val marginPx = with(density) { prefs.margin.dp.roundToPx() }
-        val headPx = with(density) { 14.dp.roundToPx() }
+        val headPx = with(density) { 6.dp.roundToPx() }
         val footPx = with(density) { 30.dp.roundToPx() }
         val pageW = (constraints.maxWidth - 2 * marginPx).coerceAtLeast(100)
         val pageH = (constraints.maxHeight - topInset - bottomInset - headPx - footPx).coerceAtLeast(100)
@@ -184,16 +196,37 @@ fun ReaderScreen(vm: MainViewModel, bookId: String) {
         var restored by remember(style, list) { mutableStateOf(false) }
         val pager = rememberPagerState(pageCount = { pages.size })
 
-        // Вёрстка: из кэша мгновенно, иначе в фоне, первые страницы — сразу
+        // Вёрстка: из кэша мгновенно; иначе сначала глава, где вы остановились, потом остальное.
+        // Работа идёт в фоне приложения и сохраняется, даже если закрыть книгу раньше.
         LaunchedEffect(style, list) {
             val ps = list ?: return@LaunchedEffect
             if (ps.isEmpty()) { done = true; return@LaunchedEffect }
             val f = Paginator.cacheFile(BookPrep.dir(ctx), bookId, style)
             val cached = withContext(Dispatchers.IO) { if (f.isFile) Paginator.load(f) else null }
             if (!cached.isNullOrEmpty()) { pages.addAll(cached); done = true; return@LaunchedEffect }
-            val all = withContext(Dispatchers.Default) { Paginator.paginate(ps, style) { batch -> pages.addAll(batch) } }
-            done = true
-            withContext(Dispatchers.IO) { Paginator.save(f, bookId, all) }
+            val chap = Paginator.chapterStart(ps, anchor.first)
+            val ch = kotlinx.coroutines.channels.Channel<Pair<Boolean, List<List<Slice>>>>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+            vm.viewModelScope.launch(Dispatchers.Default) {
+                try {
+                    val back = Paginator.paginate(ps, style, chap, ps.size) { ch.trySend(false to it) }
+                    val front = if (chap > 0) Paginator.paginate(ps, style, 0, chap) {} else emptyList()
+                    ch.trySend(true to front)
+                    Paginator.save(f, bookId, front + back)
+                } finally { ch.close() }
+            }
+            var fromCache = false
+            for ((isFront, batch) in ch) {
+                if (!isFront) pages.addAll(batch)
+                else if (pages.isEmpty()) { pages.addAll(batch); fromCache = true }
+                else if (batch.isNotEmpty()) {
+                    // Добавляем страницы до текущей главы и остаёмся на той же странице
+                    val keep = pager.currentPage
+                    pages.addAll(0, batch)
+                    if (restored) pager.requestScrollToPage(keep + batch.size)
+                }
+                if (isFront) done = true
+            }
+            if (!fromCache) done = true
         }
         // Возврат на место
         LaunchedEffect(pages.size, done) {
@@ -208,8 +241,8 @@ fun ReaderScreen(vm: MainViewModel, bookId: String) {
             snapshotFlow { pager.currentPage }.debounce(800).collect { pg ->
                 val s = pages.getOrNull(pg)?.firstOrNull() ?: return@collect
                 val last = done && pg >= pages.size - 1
-                vm.updateWork { w -> w.copy(readBooks = w.readBooks.map { if (it.id == bookId) it.copy(position = s.para, positionOffset = s.start, current = pg + 1,
-                    total = if (done) pages.size else maxOf(it.total, pages.size),
+                vm.updateWork { w -> w.copy(readBooks = w.readBooks.map { if (it.id == bookId) it.copy(position = s.para, positionOffset = s.start,
+                    current = if (done) pg + 1 else it.current, total = if (done) pages.size else it.total,
                     status = if (last) BookStatus.DONE else if (it.status == BookStatus.PLAN) BookStatus.ACTIVE else it.status,
                     finished = if (last) (it.finished ?: vm.today.toString()) else it.finished, started = it.started ?: vm.today.toString()) else it }) }
                 if (last && book.status != BookStatus.DONE) vm.message = "🎉 «${book.title}» прочитана!"
@@ -228,13 +261,15 @@ fun ReaderScreen(vm: MainViewModel, bookId: String) {
             list == null -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = th.fg)
             list.isEmpty() -> Text("Не удалось прочитать книгу. Поддерживаются EPUB, FB2 и TXT.", Modifier.align(Alignment.Center).padding(32.dp), color = th.fg)
             else -> HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { pg ->
-                // Эффект перелистывания: страница уезжает поверх следующей, под ней — тень
-                val off = (pager.currentPage - pg) + pager.currentPageOffsetFraction
+                // Эффект перелистывания: страница уезжает поверх следующей, под ней — тень.
+                // Смещение читается только при отрисовке — страница не пересобирается на каждом кадре.
+                val onTop by remember(pg) { derivedStateOf { (pager.currentPage - pg) + pager.currentPageOffsetFraction > 0f } }
                 Box(
-                    Modifier.fillMaxSize().zIndex(if (off > 0f) 1f else 0f)
-                        .graphicsLayer { if (off < 0f) translationX = off * size.width }
+                    Modifier.fillMaxSize().zIndex(if (onTop) 1f else 0f)
+                        .graphicsLayer { val off = (pager.currentPage - pg) + pager.currentPageOffsetFraction; translationX = if (off < 0f) off * size.width else 0f }
                         .drawWithContent {
                             drawContent()
+                            val off = (pager.currentPage - pg) + pager.currentPageOffsetFraction
                             if (off > 0f && off < 1f) drawRect(
                                 androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.28f * (1f - off)), Color.Transparent), startX = size.width, endX = size.width + 28.dp.toPx()),
                                 topLeft = androidx.compose.ui.geometry.Offset(size.width, 0f), size = androidx.compose.ui.geometry.Size(28.dp.toPx(), size.height),
@@ -258,11 +293,11 @@ fun ReaderScreen(vm: MainViewModel, bookId: String) {
                         Modifier.offset { androidx.compose.ui.unit.IntOffset(marginPx, topInset + headPx) }
                             .size(with(density) { pageW.toDp() }, with(density) { pageH.toDp() })
                     ) { drawIntoCanvas { c -> renderer.draw(c.nativeCanvas, list, page, fgArgb) } }
-                    Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = with(density) { marginPx.toDp() }).height(with(density) { footPx.toDp() }),
+                    Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = with(density) { bottomInset.toDp() }).padding(horizontal = with(density) { marginPx.toDp() }).height(with(density) { footPx.toDp() }),
                         verticalAlignment = Alignment.CenterVertically) {
-                        val ch = page?.firstOrNull()?.let { s -> heads.lastOrNull { it <= s.para }?.let { list.getOrNull(it)?.text } }.orEmpty()
+                        val ch = remember(page) { page?.firstOrNull()?.let { s -> heads.lastOrNull { it <= s.para }?.let { list.getOrNull(it)?.text } }.orEmpty() }
                         Text(ch, Modifier.weight(1f), color = th.fg.copy(alpha = 0.45f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${pg + 1} / ${if (done) pages.size.toString() else "…"}", color = th.fg.copy(alpha = 0.45f), fontSize = 11.sp)
+                        Text(if (done) "${pg + 1} / ${pages.size}" else "…", color = th.fg.copy(alpha = 0.45f), fontSize = 11.sp)
                     }
                 }
             }
@@ -309,7 +344,7 @@ fun ReaderScreen(vm: MainViewModel, bookId: String) {
         if (contents && list != null) {
             fun go(para: Int, off: Int) {
                 val t = Paginator.pageOf(pages, para, off)
-                if (!done && t >= pages.size - 1) vm.message = "Страницы ещё раскладываются, попробуйте через пару секунд"
+                if (!done) vm.message = "Страницы ещё раскладываются, попробуйте через пару секунд"
                 else scope.launch { pager.scrollToPage(t) }
                 contents = false; controls = false
             }
@@ -437,12 +472,7 @@ fun FreeBooksDialog(vm: MainViewModel, onDismiss: () -> Unit) {
                                     val dl = withContext(Dispatchers.IO) { runCatching { Net.download(b.url, f) } }
                                     busy = null
                                     if (dl.isFailure) { f.delete(); fail = "Не удалось скачать: " + Net.why(dl.exceptionOrNull()); return@launch }
-                                    busy = "Готовлю книгу к чтению…"
-                                    val (t, a) = withContext(Dispatchers.IO) {
-                                        runCatching { BookPrep.prepare(ctx, id, f, b.fmt) }
-                                        EbookParser.meta(f, b.fmt)
-                                    }
-                                    busy = null
+                                    val (t, a) = withContext(Dispatchers.IO) { EbookParser.meta(f, b.fmt) }
                                     val book = Book(id, b.title.ifBlank { t }, b.authors.ifBlank { a }, file = "books/$id.${b.fmt}", format = b.fmt, status = BookStatus.ACTIVE,
                                         started = vm.today.toString(), source = "${b.source}: ${b.id}")
                                     vm.updateWork { it.copy(readBooks = it.readBooks + book) }
@@ -479,7 +509,6 @@ fun importEbook(ctx: Context, vm: MainViewModel, uri: android.net.Uri, mime: Str
                 val id = newId()
                 val f = File(appCtx.filesDir, "books/$id.$fmt").apply { parentFile?.mkdirs() }
                 (r.openInputStream(uri) ?: error("Не удалось открыть файл")).use { i -> f.outputStream().use { i.copyTo(it) } }
-                runCatching { BookPrep.prepare(appCtx, id, f, fmt) }
                 val (t, a) = EbookParser.meta(f, fmt)
                 Book(id, t.ifBlank { name.substringBeforeLast('.').removeSuffix(".fb2") }, a, file = "books/$id.$fmt", format = fmt, status = BookStatus.ACTIVE,
                     started = vm.today.toString(), source = "Файл")
@@ -487,6 +516,7 @@ fun importEbook(ctx: Context, vm: MainViewModel, uri: android.net.Uri, mime: Str
         }
         res.onSuccess { book ->
             vm.updateWork { it.copy(readBooks = it.readBooks + book) }
+            vm.message = "📖 «${book.title}» добавлена"
             vm.push(app.calstats.Screen.Reader(book.id))
         }.onFailure { vm.message = it.message ?: "Не удалось открыть файл" }
     }

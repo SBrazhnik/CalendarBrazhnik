@@ -1,8 +1,11 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package app.calstats.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -677,6 +680,8 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var progressFor by remember { mutableStateOf<Book?>(null) }
     var timerMin by remember { mutableStateOf(0) }
     var freeSearch by remember { mutableStateOf(false) }
+    var menuFor by remember { mutableStateOf<Book?>(null) }
+    var deleteFor by remember { mutableStateOf<Book?>(null) }
     val ctxR = androidx.compose.ui.platform.LocalContext.current
     val openBook = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) app.calstats.ui.importEbook(ctxR, vm, uri)
@@ -721,7 +726,8 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             if (list.isNotEmpty()) {
                 item { Head("${st.title} · ${list.size}") }
                 items(list, key = { it.id }) { b ->
-                    Flat(onClick = { edit = b }) {
+                    // Касание — читать (или изменить), долгое нажатие — меню с удалением
+                    Flat(Modifier.clip(CardDefaults.shape).combinedClickable(onClick = { if (b.isEbook) vm.push(app.calstats.Screen.Reader(b.id)) else edit = b }, onLongClick = { menuFor = b })) {
                         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
@@ -787,6 +793,23 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             dismissButton = { TextButton(onClick = { progressFor = null }) { Text("Отмена") } })
     }
     edit?.let { b -> ReadBookDialog(vm, b) { edit = null } }
+    menuFor?.let { b ->
+        AlertDialog(onDismissRequest = { menuFor = null }, title = { Text(b.title, maxLines = 2) },
+            text = {
+                Column {
+                    if (b.isEbook) Text("📖 Читать", Modifier.fillMaxWidth().clickable { menuFor = null; vm.push(app.calstats.Screen.Reader(b.id)) }.padding(vertical = 12.dp))
+                    Text("✏️ Изменить", Modifier.fillMaxWidth().clickable { menuFor = null; edit = b }.padding(vertical = 12.dp))
+                    Text("🗑 Удалить", Modifier.fillMaxWidth().clickable { menuFor = null; deleteFor = b }.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = { TextButton(onClick = { menuFor = null }) { Text("Закрыть") } })
+    }
+    deleteFor?.let { b ->
+        AlertDialog(onDismissRequest = { deleteFor = null }, title = { Text("Удалить книгу?") },
+            text = { Text("«${b.title}»" + if (b.isEbook) " — файл книги, закладки и место чтения удалятся с телефона." else " удалится из списка.") },
+            confirmButton = { TextButton(onClick = { deleteFor = null; app.calstats.ui.BookPrep.delete(ctxR, vm, b) }) { Text("Удалить", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Отмена") } })
+    }
 }
 
 @Composable
@@ -838,7 +861,8 @@ private fun ReadBookDialog(vm: MainViewModel, b: Book, onDismiss: () -> Unit) {
                     OutlinedTextField(quote, { quote = it }, Modifier.weight(1f), placeholder = { Text("Новая цитата") }, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                     TextButton(enabled = quote.isNotBlank(), onClick = { quotes = quotes + quote.trim(); quote = "" }) { Text("+") }
                 }
-                if (exists) TextButton(onClick = { vm.updateWork { w -> w.copy(readBooks = w.readBooks.filter { it.id != b.id }) }; onDismiss() }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
+                val ctxD = androidx.compose.ui.platform.LocalContext.current
+                if (exists) TextButton(onClick = { app.calstats.ui.BookPrep.delete(ctxD, vm, b); onDismiss() }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {

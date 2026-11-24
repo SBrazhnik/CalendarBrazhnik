@@ -9,6 +9,7 @@ import app.calstats.work.Para
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
+import kotlinx.coroutines.sync.withLock
 
 /** Кусок абзаца на странице: символы [start, end) абзаца para. */
 data class Slice(val para: Int, val start: Int, val end: Int)
@@ -23,7 +24,7 @@ class PageStyle(
     val gap = (textPx * 0.35f).toInt()
     val headTop = (textPx * 1.6f).toInt()
     val headGap = (textPx * 1.0f).toInt()
-    fun key() = "${width}x${height}_${textPx.toInt()}_${(line * 100).toInt()}_${serif}_${justify}_v2"
+    fun key() = "${width}x${height}_${textPx.toInt()}_${(line * 100).toInt()}_${serif}_${justify}_v3"
 
     fun paint(heading: Boolean) = TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
         textSize = if (heading) textPx * 1.25f else textPx
@@ -33,38 +34,37 @@ class PageStyle(
     /** Текст абзаца так, как он выводится (с красной строкой). */
     fun text(p: Para): String = if (p.heading) p.text else " " + p.text
 
-    /** Строки абзаца, начиная с символа from (смещения строк — от from). */
-    fun layout(text: String, from: Int, heading: Boolean, paint: TextPaint): StaticLayout {
-        val t = if (from == 0) text else text.substring(from)
-        val b = StaticLayout.Builder.obtain(t, 0, t.length, paint, width)
+    /** Строки целого абзаца. Без переносов слов — так вёрстка в разы быстрее. */
+    fun layout(text: String, heading: Boolean, paint: TextPaint): StaticLayout {
+        val b = StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
             .setAlignment(if (heading) Layout.Alignment.ALIGN_CENTER else Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(0f, if (heading) 1.15f else line)
             .setIncludePad(false)
             .setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE)
-            .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NORMAL)
+            .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
         if (justify && !heading && Build.VERSION.SDK_INT >= 26) b.setJustificationMode(Layout.JUSTIFICATION_MODE_INTER_WORD)
         return b.build()
     }
 }
 
-/** Рисует одну страницу на Canvas — теми же правилами, что и разбивка. */
+/** Рисует одну страницу на Canvas — теми же правилами, что и разбивка. Вёрстка абзацев кэшируется. */
 class PageRenderer(private val st: PageStyle) {
     private val body = st.paint(false); private val head = st.paint(true)
+    private val cache = android.util.LruCache<Int, StaticLayout>(64)
     fun draw(c: android.graphics.Canvas, paras: List<Para>, page: List<Slice>, color: Int) {
         body.color = color; head.color = color
         var y = 0
         for (s in page) {
             val p = paras.getOrNull(s.para) ?: continue
-            val text = st.text(p)
-            val l = st.layout(text, s.start, p.heading, if (p.heading) head else body)
+            val l = cache.get(s.para) ?: st.layout(st.text(p), p.heading, if (p.heading) head else body).also { cache.put(s.para, it) }
+            val first = l.getLineForOffset(s.start)
+            var last = first
+            while (last + 1 < l.lineCount && l.getLineEnd(last + 1) <= s.end) last++
             val top = if (p.heading && y > 0 && s.start == 0) st.headTop else 0
-            var lines = 0
-            while (lines < l.lineCount && s.start + l.getLineEnd(lines) <= s.end) lines++
-            if (lines == 0) lines = 1
-            val h = l.getLineBottom(lines - 1)
+            val lt = l.getLineTop(first); val h = l.getLineBottom(last) - lt
             c.save()
-            c.translate(0f, (y + top).toFloat())
-            c.clipRect(0, 0, st.width, h)
+            c.translate(0f, (y + top - lt).toFloat())
+            c.clipRect(0, lt, st.width, lt + h)
             l.draw(c)
             c.restore()
             y += top + h + if (p.heading) st.headGap else st.gap
@@ -77,42 +77,49 @@ object Paginator {
      * Разбивает книгу на страницы. onBatch вызывается по ходу — первые страницы
      * можно читать, пока остальные считаются.
      */
-    fun paginate(paras: List<Para>, st: PageStyle, onBatch: (List<List<Slice>>) -> Unit): List<List<Slice>> {
+    fun paginate(paras: List<Para>, st: PageStyle, from: Int = 0, to: Int = paras.size, onBatch: (List<List<Slice>>) -> Unit): List<List<Slice>> {
         val body = st.paint(false); val head = st.paint(true)
         val pages = ArrayList<List<Slice>>()
         var cur = ArrayList<Slice>()
         var y = 0
         var lastSent = 0
         fun flush() { if (cur.isNotEmpty()) { pages += cur; cur = ArrayList() }; y = 0 }
-        for ((i, p) in paras.withIndex()) {
+        for (i in from until to) {
+            val p = paras[i]
             // Глава начинается с новой страницы
             if (p.heading && cur.isNotEmpty() && !(paras.getOrNull(i - 1)?.heading ?: false)) flush()
             val text = st.text(p)
-            var start = 0
-            while (start < text.length) {
-                val top = if (p.heading && y > 0 && start == 0) st.headTop else 0
-                val l = st.layout(text, start, p.heading, if (p.heading) head else body)
+            val l = st.layout(text, p.heading, if (p.heading) head else body)
+            var line = 0
+            while (line < l.lineCount) {
+                val top = if (p.heading && y > 0 && line == 0) st.headTop else 0
                 val avail = st.height - y - top
-                var fit = 0
-                while (fit < l.lineCount && l.getLineBottom(fit) <= avail) fit++
-                if (fit == l.lineCount) {
-                    cur += Slice(i, start, text.length)
-                    y += top + l.height + if (p.heading) st.headGap else st.gap
+                val base = l.getLineTop(line)
+                var next = line
+                while (next < l.lineCount && l.getLineBottom(next) - base <= avail) next++
+                if (next == l.lineCount) {
+                    cur += Slice(i, l.getLineStart(line), text.length)
+                    y += top + (l.getLineBottom(l.lineCount - 1) - base) + if (p.heading) st.headGap else st.gap
                     break
                 }
-                if (fit == 0) {
-                    if (cur.isEmpty()) fit = 1 else { flush(); continue }
-                }
-                val end = start + l.getLineEnd(fit - 1)
-                cur += Slice(i, start, end)
+                if (next == line) { if (cur.isEmpty()) next = line + 1 else { flush(); continue } }
+                cur += Slice(i, l.getLineStart(line), l.getLineEnd(next - 1))
                 flush()
-                start = end
+                line = next
             }
-            if (pages.size - lastSent >= 40) { onBatch(pages.subList(lastSent, pages.size).toList()); lastSent = pages.size }
+            // первые страницы — сразу, дальше пачками
+            if (pages.size - lastSent >= (if (lastSent == 0) 3 else 40)) { onBatch(pages.subList(lastSent, pages.size).toList()); lastSent = pages.size }
         }
         flush()
         if (pages.size > lastSent) onBatch(pages.subList(lastSent, pages.size).toList())
         return pages
+    }
+
+    /** Начало главы, в которой находится абзац: с него вёрстка не зависит от предыдущего текста. */
+    fun chapterStart(paras: List<Para>, para: Int): Int {
+        var i = para.coerceIn(0, maxOf(0, paras.lastIndex))
+        while (i > 0 && !(paras[i].heading && !paras[i - 1].heading)) i--
+        return i
     }
 
     // ---------- кэш страниц на диске: повторное открытие мгновенное ----------
@@ -127,11 +134,14 @@ object Paginator {
 
     fun save(f: File, bookId: String, pages: List<List<Slice>>) = runCatching {
         f.parentFile?.mkdirs()
-        f.parentFile?.listFiles { x -> x.name.startsWith(bookId + "_") }?.forEach { it.delete() }
-        DataOutputStream(f.outputStream().buffered()).use { o ->
+        // пишем во временный файл и переименовываем — файл никогда не бывает «наполовину записан»
+        val tmp = File(f.parentFile, f.name + ".tmp" + System.nanoTime())
+        DataOutputStream(tmp.outputStream().buffered()).use { o ->
             o.writeInt(pages.size)
             for (pg in pages) { o.writeInt(pg.size); for (s in pg) { o.writeInt(s.para); o.writeInt(s.start); o.writeInt(s.end) } }
         }
+        f.parentFile?.listFiles { x -> x.name.startsWith(bookId + "_") && x != tmp && x.name != f.name }?.forEach { it.delete() }
+        if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
     }
 
     /** Номер страницы, на которой находится место (абзац, символ). */
@@ -169,12 +179,15 @@ object BookPrep {
         return Paginator.cacheFile(dir(ctx), bookId, st).isFile
     }
 
-    /** Долгая работа — вызывать в фоне. */
-    fun prepare(ctx: android.content.Context, bookId: String, file: File, format: String) {
+    private val locks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+    fun lock(bookId: String) = locks.getOrPut(bookId) { kotlinx.coroutines.sync.Mutex() }
+
+    /** Долгая работа — вызывать в фоне. Одна книга не готовится дважды одновременно. */
+    suspend fun prepare(ctx: android.content.Context, bookId: String, file: File, format: String) = lock(bookId).withLock {
         val st = lastStyle(ctx)
-        if (st != null && Paginator.cacheFile(dir(ctx), bookId, st).isFile) return
+        if (st != null && Paginator.cacheFile(dir(ctx), bookId, st).isFile) return@withLock
         val paras = app.calstats.work.EbookParser.load(file, format, dir(ctx))
-        if (st == null || paras.isEmpty()) return
+        if (st == null || paras.isEmpty()) return@withLock
         Paginator.save(Paginator.cacheFile(dir(ctx), bookId, st), bookId, Paginator.paginate(paras, st) {})
     }
 
@@ -182,5 +195,14 @@ object BookPrep {
     fun forget(ctx: android.content.Context, bookId: String, file: File?) {
         File(dir(ctx), "pages").listFiles { x -> x.name.startsWith(bookId + "_") }?.forEach { it.delete() }
         if (file != null) File(dir(ctx), "books").listFiles { x -> x.name.startsWith(file.name + ".") }?.forEach { it.delete() }
+    }
+
+    /** Удалить книгу целиком: запись, файл, подготовленные страницы. */
+    fun delete(ctx: android.content.Context, vm: app.calstats.MainViewModel, b: app.calstats.work.Book) {
+        vm.updateWork { w -> w.copy(readBooks = w.readBooks.filter { it.id != b.id }) }
+        val f = b.file?.let { File(ctx.filesDir, it) }
+        forget(ctx, b.id, f)
+        f?.delete()
+        vm.message = "Книга «${b.title}» удалена"
     }
 }

@@ -35,4 +35,18 @@ class EbookTest {
         assertEquals(p, EbookParser.load(f, "epub", cache))
         assertEquals(p, EbookParser.load(f, "epub", cache))
     }
+
+    @Test fun bigBookIsFast() {
+        val sb = StringBuilder("<?xml version=\"1.0\" encoding=\"utf-8\"?><FictionBook><body>")
+        repeat(150) { c -> sb.append("<section><title><p>Глава $c</p></title>"); repeat(100) { sb.append("<p>Абзац &mdash; с <emphasis>выделением</emphasis> и &laquo;кавычками&raquo;, ").append("слово ".repeat(40)).append("</p>\n") }; sb.append("</section>") }
+        sb.append("</body></FictionBook>")
+        val b = sb.toString().toByteArray()
+        EbookParser.fb2(b)
+        val t = System.currentTimeMillis()
+        val p = EbookParser.fb2(b)
+        val ms = System.currentTimeMillis() - t
+        println("EBOOK_BENCH ${b.size / 1000} KB → ${p.size} абзацев за $ms мс")
+        assertEquals(150 * 101, p.size)
+        assertTrue("разбор слишком медленный: $ms мс", ms < 4000)
+    }
 }
