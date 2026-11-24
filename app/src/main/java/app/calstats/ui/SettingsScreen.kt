@@ -2,6 +2,7 @@
 
 package app.calstats.ui
 
+import androidx.compose.runtime.key
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -165,6 +166,8 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            Section("Защита") { LockSettings(vm) }
 
             Section("Модули") {
                 Text(
@@ -469,7 +472,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
 
 private val SETTINGS_TABS = listOf("Общие", "Уведомления", "Календарь", "Резервные копии")
 private val SECTION_TAB = mapOf(
-    "Модули" to 0, "Синхронизация с Google" to 2, "Какие календари считать" to 2, "Подсчёт" to 2,
+    "Модули" to 0, "Защита" to 0, "Синхронизация с Google" to 2, "Какие календари считать" to 2, "Подсчёт" to 2,
     "Даты из модулей в календаре" to 2, "Уведомления" to 1, "Учёт алкоголя" to 1, "Резервная копия" to 3,
 )
 private val LocalSettingsTab = androidx.compose.runtime.compositionLocalOf { 0 }
@@ -483,4 +486,78 @@ private fun Section(title: String, content: @Composable () -> Unit) {
             content()
         }
     }
+}
+
+
+@androidx.compose.runtime.Composable
+private fun LockSettings(vm: MainViewModel) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var setPin by remember { mutableStateOf(false) }
+    var confirmOff by remember { mutableStateOf(false) }
+    var tick by remember { mutableStateOf(0) } // перечитать настройки после изменения
+    val on = vm.appLockOn
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Пароль на вход", style = MaterialTheme.typography.bodyLarge)
+            Text(if (on) "Включён · ${app.calstats.AppLock.pinLength(ctx)} цифр" else "4–6 цифр, хранится только в зашифрованном виде",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = { if (it) setPin = true else confirmOff = true })
+    }
+    if (on) {
+        key(tick) {
+            if (app.calstats.AppLock.bioAvailable(ctx)) Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Вход по отпечатку или лицу", style = MaterialTheme.typography.bodyLarge)
+                    Text("Пароль остаётся запасным способом", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = app.calstats.AppLock.bio(ctx), onCheckedChange = { v ->
+                    if (v) bioPrompt(ctx, "Включить вход по отпечатку", false) { app.calstats.AppLock.setBio(ctx, true); tick++ }
+                    else { app.calstats.AppLock.setBio(ctx, false); tick++ }
+                })
+            } else Text("Отпечаток не настроен в телефоне — добавьте его в настройках Android, чтобы входить без пароля.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Что защищать", style = MaterialTheme.typography.labelLarge)
+            app.calstats.AppLock.Scope.entries.forEach { s ->
+                Row(Modifier.fillMaxWidth().clickable { app.calstats.AppLock.setScope(ctx, s); tick++ }, verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.RadioButton(app.calstats.AppLock.scope(ctx) == s, { app.calstats.AppLock.setScope(ctx, s); tick++ })
+                    Text(s.title, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            Text("Спрашивать снова, если приложение было свёрнуто", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                app.calstats.AppLock.TIMEOUTS.forEach { (m, label) ->
+                    androidx.compose.material3.FilterChip(selected = app.calstats.AppLock.timeout(ctx) == m,
+                        onClick = { app.calstats.AppLock.setTimeout(ctx, m); tick++ }, label = { Text(label) })
+                }
+            }
+            OutlinedButton(onClick = { setPin = true }) { Text("Сменить пароль") }
+        }
+    }
+    if (setPin) SetPinDialog(onDismiss = { setPin = false }) { pin ->
+        app.calstats.AppLock.setPin(ctx, pin)
+        setPin = false
+        vm.appLockOn = true; vm.appLocked = false
+        (ctx as? android.app.Activity)?.let { if (android.os.Build.VERSION.SDK_INT >= 33) it.setRecentsScreenshotEnabled(false) }
+        vm.message = if (app.calstats.AppLock.bioAvailable(ctx) && !app.calstats.AppLock.bio(ctx)) "Пароль установлен. Можно включить вход по отпечатку" else "Пароль установлен"
+        tick++
+    }
+    if (confirmOff) AlertDialog(
+        onDismissRequest = { confirmOff = false },
+        title = { Text("Отключить пароль?") },
+        text = { Text("Приложение будет открываться без пароля и отпечатка.") },
+        confirmButton = {
+            TextButton(onClick = {
+                confirmOff = false
+                // Отключить может только владелец: подтверждение отпечатком или паролем телефона
+                val off = {
+                    app.calstats.AppLock.disable(ctx); vm.appLockOn = false; vm.appLocked = false
+                    (ctx as? android.app.Activity)?.let { if (android.os.Build.VERSION.SDK_INT >= 33) it.setRecentsScreenshotEnabled(true) }
+                    vm.message = "Пароль отключён"
+                }
+                if (app.calstats.AppLock.deviceSecure(ctx) && android.os.Build.VERSION.SDK_INT >= 29) bioPrompt(ctx, "Отключить пароль", true) { off() } else off()
+            }) { Text("Отключить") }
+        },
+        dismissButton = { TextButton(onClick = { confirmOff = false }) { Text("Отмена") } },
+    )
 }

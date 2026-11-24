@@ -1,5 +1,6 @@
 package app.calstats
 
+import android.os.Build
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -61,8 +62,18 @@ class MainActivity : ComponentActivity() {
         handleShare(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (AppLock.shouldLock(this)) {
+            vm.appLocked = true
+            vm.quickInput = null; vm.checkIn = false
+        }
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(!AppLock.enabled(this))
+    }
+
     override fun onStop() {
         super.onStop()
+        AppLock.markBackground(this)
         // Документы снова закрываются, когда приложение уходит в фон (но не при выборе фото).
         if (!vm.keepDocsUnlocked) vm.docsUnlocked = false
     }
@@ -127,6 +138,11 @@ fun App(vm: MainViewModel) {
 
     if (!vm.hasPermission) {
         PermissionScreen(onGranted = { vm.onResume() })
+        return
+    }
+    val lockCtx = LocalContext.current
+    if (vm.appLocked && vm.appLockOn && AppLock.covers(lockCtx, vm.tab)) {
+        app.calstats.ui.LockScreen(onUnlock = { vm.appLocked = false; vm.appLockOn = AppLock.enabled(lockCtx) })
         return
     }
 

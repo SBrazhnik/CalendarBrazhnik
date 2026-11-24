@@ -658,6 +658,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---------- Пароль на вход ----------
+    var appLocked by mutableStateOf(AppLock.enabled(getApplication()))
+    var appLockOn by mutableStateOf(AppLock.enabled(getApplication()))
+
     // ---------- Документы: защита отпечатком / PIN ----------
     var docsLock by mutableStateOf(uiPrefs.getBoolean("docs_lock", false))
         private set
