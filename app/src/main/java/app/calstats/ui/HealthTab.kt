@@ -530,7 +530,7 @@ private fun FoodSheet(vm: MainViewModel, date: LocalDate, meal0: Meal, onDismiss
         scope.launch {
             runCatching { FoodSearch.search(query) }
                 .onSuccess { online = it; if (it.isEmpty()) error = "В Open Food Facts ничего не нашлось" }
-                .onFailure { error = "Нет связи с Open Food Facts" }
+                .onFailure { error = "Open Food Facts: " + app.calstats.Net.why(it) }
             loading = false
         }
     }
@@ -549,7 +549,7 @@ private fun FoodSheet(vm: MainViewModel, date: LocalDate, meal0: Meal, onDismiss
                 scope.launch {
                     runCatching { FoodSearch.byBarcode(code) }
                         .onSuccess { f -> if (f != null) pick = f else error = "Штрихкод $code не найден — добавьте продукт вручную" }
-                        .onFailure { error = "Нет связи с Open Food Facts" }
+                        .onFailure { error = "Open Food Facts: " + app.calstats.Net.why(it) }
                     loading = false
                 }
             }

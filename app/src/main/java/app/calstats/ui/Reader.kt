@@ -298,13 +298,15 @@ fun FreeBooksDialog(vm: MainViewModel, onDismiss: () -> Unit) {
     var lang by remember { mutableStateOf("ru") }
     var busy by remember { mutableStateOf<String?>(null) }
     var results by remember { mutableStateOf<List<Net.FreeBook>?>(null) }
+    var fail by remember { mutableStateOf<String?>(null) }
     fun search() {
         if (q.isBlank()) return
         busy = "Ищу…"
         scope.launch {
-            results = withContext(Dispatchers.IO) { runCatching { Net.searchFree(q.trim(), lang) }.getOrNull() }
+            val r = withContext(Dispatchers.IO) { runCatching { Net.searchFree(q.trim(), lang) } }
             busy = null
-            if (results == null) vm.message = "Нет связи с библиотекой"
+            results = r.getOrNull()
+            fail = r.exceptionOrNull()?.let { "Библиотека недоступна: " + Net.why(it) }
         }
     }
     AlertDialog(
@@ -322,6 +324,7 @@ fun FreeBooksDialog(vm: MainViewModel, onDismiss: () -> Unit) {
                 }
                 Button(onClick = { search() }, enabled = q.isNotBlank() && busy == null) { Text("Найти") }
                 busy?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                fail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 results?.let { r ->
                     if (r.isEmpty()) Text("Ничего не нашлось. Попробуйте фамилию автора, на русском и латиницей.", style = MaterialTheme.typography.bodySmall)
                     r.forEach { b ->
@@ -338,9 +341,9 @@ fun FreeBooksDialog(vm: MainViewModel, onDismiss: () -> Unit) {
                                     val fmt = if (b.epub != null) "epub" else "txt"
                                     val id = newId()
                                     val f = File(ctx.filesDir, "books/$id.$fmt")
-                                    val ok = withContext(Dispatchers.IO) { runCatching { Net.download(url, f) }.isSuccess }
+                                                    val dl = withContext(Dispatchers.IO) { runCatching { Net.download(url, f) } }
                                     busy = null
-                                    if (!ok) { vm.message = "Не удалось скачать"; return@launch }
+                                    if (dl.isFailure) { f.delete(); fail = "Не удалось скачать: " + Net.why(dl.exceptionOrNull()); return@launch }
                                     val book = Book(id, b.title, b.authors, file = "books/$id.$fmt", format = fmt, status = BookStatus.ACTIVE, started = vm.today.toString(),
                                         source = "Project Gutenberg #${b.id}")
                                     vm.updateWork { it.copy(readBooks = it.readBooks + book) }

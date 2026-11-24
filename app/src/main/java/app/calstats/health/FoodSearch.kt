@@ -9,8 +9,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 
 /** Open Food Facts — открытая база продуктов с калорийностью и штрихкодами (много российских товаров). */
@@ -18,16 +16,26 @@ object FoodSearch {
     private const val UA = "ZelenyiRitm/1.0 (Android; personal diary)"
     private const val FIELDS = "code,product_name,product_name_ru,brands,nutriments,serving_quantity"
 
+    /** Сначала новый быстрый поиск Open Food Facts (search-a-licious), при сбое — старый cgi/search.pl. */
     suspend fun search(query: String): List<FoodItem> = withContext(Dispatchers.IO) {
         val q = URLEncoder.encode(query.trim(), "UTF-8")
-        val url = "https://ru.openfoodfacts.org/cgi/search.pl?search_terms=$q&search_simple=1&action=process&json=1&page_size=30&lc=ru&fields=$FIELDS"
-        val root = Json.parseToJsonElement(get(url)).jsonObject
-        (root["products"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::parse) }
+        val first = runCatching {
+            val root = Json.parseToJsonElement(app.calstats.Net.get("https://search.openfoodfacts.org/search?q=$q&langs=ru,en&page_size=30&fields=$FIELDS", ua = UA, readTimeout = 20_000, tries = 1)).jsonObject
+            (root["hits"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::parse) }
+        }
+        if (first.isSuccess && first.getOrThrow().isNotEmpty()) return@withContext first.getOrThrow()
+        val legacy = runCatching {
+            val root = Json.parseToJsonElement(app.calstats.Net.get("https://world.openfoodfacts.org/cgi/search.pl?search_terms=$q&search_simple=1&action=process&json=1&page_size=30&lc=ru&fields=$FIELDS", ua = UA)).jsonObject
+            (root["products"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::parse) }
+        }
+        legacy.getOrNull() ?: first.getOrNull() ?: throw (first.exceptionOrNull() ?: legacy.exceptionOrNull()!!)
     }
 
     suspend fun byBarcode(code: String): FoodItem? = withContext(Dispatchers.IO) {
-        val url = "https://world.openfoodfacts.org/api/v2/product/${URLEncoder.encode(code, "UTF-8")}.json?fields=$FIELDS"
-        val root = Json.parseToJsonElement(get(url)).jsonObject
+        val c = URLEncoder.encode(code, "UTF-8")
+        val body = runCatching { app.calstats.Net.get("https://world.openfoodfacts.org/api/v2/product/$c.json?fields=$FIELDS", ua = UA) }
+            .recoverCatching { e -> if (e is app.calstats.Net.HttpError && e.code == 404) "{}" else throw e }.getOrThrow()
+        val root = Json.parseToJsonElement(body).jsonObject
         (root["product"] as? JsonObject)?.let(::parse)?.copy(barcode = code)
     }
 
@@ -48,18 +56,5 @@ object FoodSearch {
             barcode = str("code"),
             portion = serving?.takeIf { it in 1..2000 } ?: 100,
         )
-    }
-
-    private fun get(url: String): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 10_000
-        c.readTimeout = 20_000
-        c.setRequestProperty("User-Agent", UA)
-        try {
-            if (c.responseCode !in 200..299) throw IllegalStateException("HTTP ${c.responseCode}")
-            return c.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            c.disconnect()
-        }
     }
 }

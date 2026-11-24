@@ -9,16 +9,59 @@ import java.net.URL
 
 /** Небольшие запросы в интернет: рецепт по ссылке, курс валют ЦБ, книга по ISBN. */
 object Net {
-    private fun get(url: String, charset: String? = null): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 10_000; c.readTimeout = 15_000
-        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) ZelenyiRitm")
-        c.instanceFollowRedirects = true
-        return c.inputStream.use { s ->
-            val bytes = s.readBytes()
-            val cs = charset ?: c.contentType?.substringAfter("charset=", "")?.takeIf { it.isNotBlank() } ?: "UTF-8"
-            String(bytes, charset(cs))
+    const val UA = "ZelenyiRitm/1.0 (Android; app.calstats.brazhnik)"
+
+    /** GET с проверкой ответа и повтором при временных сбоях (таймаут, 5xx). */
+    fun get(url: String, charset: String? = null, ua: String = UA, readTimeout: Int = 30_000, tries: Int = 2): String {
+        var last: Exception? = null
+        repeat(tries) { attempt ->
+            try { return getOnce(url, charset, ua, readTimeout) } catch (e: Exception) {
+                last = e
+                val retry = e is java.net.SocketTimeoutException || (e is HttpError && e.code >= 500) || e is java.io.IOException && e !is java.net.UnknownHostException && e !is HttpError
+                if (!retry || attempt == tries - 1) throw e
+                Thread.sleep(1500L * (attempt + 1))
+            }
         }
+        throw last ?: IllegalStateException()
+    }
+
+    class HttpError(val code: Int) : java.io.IOException("HTTP $code")
+
+    private fun getOnce(url: String, charset: String?, ua: String, readTimeout: Int): String {
+        var u = url
+        repeat(5) {
+            val c = URL(u).openConnection() as HttpURLConnection
+            try {
+                c.connectTimeout = 15_000; c.readTimeout = readTimeout
+                c.instanceFollowRedirects = false
+                c.setRequestProperty("User-Agent", ua)
+                c.setRequestProperty("Accept", "application/json, text/xml, */*")
+                val code = c.responseCode
+                if (code in 300..399) { u = URL(URL(u), c.getHeaderField("Location") ?: throw HttpError(code)).toString(); return@repeat }
+                if (code !in 200..299) throw HttpError(code)
+                val bytes = c.inputStream.use { it.readBytes() }
+                val cs = charset ?: c.contentType?.substringAfter("charset=", "")?.substringBefore(';')?.trim()?.takeIf { it.isNotBlank() } ?: "UTF-8"
+                return String(bytes, charset(cs))
+            } finally { c.disconnect() }
+        }
+        throw HttpError(310)
+    }
+
+    /** Понятная причина сбоя сети для пользователя. */
+    fun why(e: Throwable?): String = when (e) {
+        null -> "неизвестная ошибка"
+        is java.net.UnknownHostException -> "сайт не находится — нет интернета или адрес заблокирован провайдером"
+        is java.net.SocketTimeoutException -> "сервер слишком долго не отвечает — попробуйте ещё раз чуть позже"
+        is java.net.ConnectException -> "не удалось подключиться — сайт недоступен из вашей сети (может помочь другая сеть или VPN)"
+        is javax.net.ssl.SSLException -> "ошибка защищённого соединения — проверьте дату и время в телефоне"
+        is HttpError -> when (e.code) {
+            429 -> "слишком много запросов — подождите минуту"
+            403 -> "сервер отказал в доступе из вашей сети (403)"
+            in 500..599 -> "сервис временно перегружен (${e.code}) — попробуйте позже"
+            else -> "сервер ответил ошибкой ${e.code}"
+        }
+        is org.json.JSONException, is kotlinx.serialization.SerializationException -> "сервер прислал непонятный ответ — вероятно, он перегружен"
+        else -> e.message ?: e.javaClass.simpleName
     }
 
     /** Рецепт со страницы сайта по разметке schema.org/Recipe (её используют почти все кулинарные сайты). */
@@ -89,10 +132,16 @@ object Net {
     /** Найденная бесплатная книга (общественное достояние, Project Gutenberg). */
     data class FreeBook(val id: Int, val title: String, val authors: String, val lang: String, val downloads: Int, val epub: String?, val txt: String?)
 
-    /** Поиск в Project Gutenberg через открытый каталог Gutendex. lang: "ru", "en" или "" (все). */
+    /** Поиск в Project Gutenberg: сначала каталог Gutendex, если он не отвечает — сам gutenberg.org. lang: "ru", "en" или "" (все). */
     fun searchFree(q: String, lang: String): List<FreeBook> {
+        val first = runCatching { gutendex(q, lang) }
+        if (first.isSuccess) return first.getOrThrow()
+        return runCatching { gutenbergOpds(q, lang) }.getOrElse { throw first.exceptionOrNull()!! }
+    }
+
+    private fun gutendex(q: String, lang: String): List<FreeBook> {
         val url = "https://gutendex.com/books/?search=" + java.net.URLEncoder.encode(q, "UTF-8") + if (lang.isNotBlank()) "&languages=$lang" else ""
-        val a = JSONObject(get(url)).optJSONArray("results") ?: return emptyList()
+        val a = JSONObject(get(url, readTimeout = 25_000, tries = 1)).optJSONArray("results") ?: return emptyList()
         return (0 until a.length()).map { i ->
             val o = a.getJSONObject(i)
             val f = o.optJSONObject("formats") ?: JSONObject()
@@ -103,15 +152,29 @@ object Net {
         }
     }
 
+    /** Запасной путь: OPDS-каталог gutenberg.org (язык задаётся в запросе как «l.ru»). */
+    private fun gutenbergOpds(q: String, lang: String): List<FreeBook> {
+        val query = q + if (lang.isNotBlank()) " l.$lang" else ""
+        val xml = get("https://www.gutenberg.org/ebooks/search.opds/?query=" + java.net.URLEncoder.encode(query, "UTF-8"))
+        fun unesc(t: String) = t.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").trim()
+        return Regex("<entry>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL).findAll(xml).mapNotNull { m ->
+            val e = m.groupValues[1]
+            val id = Regex("""/ebooks/(\d+)""").find(e)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
+            val title = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL).find(e)?.groupValues?.get(1)?.let(::unesc).orEmpty()
+            val author = Regex("<content[^>]*>(.*?)</content>", RegexOption.DOT_MATCHES_ALL).find(e)?.groupValues?.get(1)?.let { unesc(it.replace(Regex("<[^>]+>"), " ")) }.orEmpty()
+            FreeBook(id, title, author, lang, 0, "https://www.gutenberg.org/ebooks/$id.epub3.images", "https://www.gutenberg.org/ebooks/$id.txt.utf-8")
+        }.distinctBy { it.id }.toList()
+    }
+
     /** Скачать файл в папку приложения. */
     fun download(url: String, to: java.io.File) {
         var u = url
         repeat(5) {
             val c = URL(u).openConnection() as HttpURLConnection
             c.connectTimeout = 15_000; c.readTimeout = 60_000; c.instanceFollowRedirects = false
-            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) ZelenyiRitm")
+            c.setRequestProperty("User-Agent", UA)
             if (c.responseCode in 300..399) { u = java.net.URL(URL(u), c.getHeaderField("Location")).toString(); c.disconnect(); return@repeat }
-            if (c.responseCode !in 200..299) error("Сервер ответил ${c.responseCode}")
+            if (c.responseCode !in 200..299) throw HttpError(c.responseCode)
             to.parentFile?.mkdirs()
             c.inputStream.use { i -> to.outputStream().use { i.copyTo(it) } }
             return
