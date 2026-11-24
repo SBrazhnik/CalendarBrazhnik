@@ -297,7 +297,7 @@ object Notify {
         when (intent.action) {
             ACTION_MORNING -> {
                 val lines = morningLines(ctx, today)
-                if (lines.isNotEmpty()) post(ctx, CH_DAY, 4501, "☀ План на ${Fmt.dayTitle(today, today).lowercase()}", lines, Tab.HOME)
+                if (lines.isNotEmpty()) post(ctx, CH_DAY, 4501, "☀ План на ${Fmt.dayTitle(today, today).lowercase()}", lines, Tab.HOME, quick = "morning")
                 if (today.dayOfMonth == 1 && runCatching { app.calstats.work.WorkStore(ctx).load().cashback.isNotEmpty() }.getOrDefault(false)) {
                     post(ctx, CH_DAY, 4510, "💳 Новый месяц — кешбэк", listOf("Выберите категории кешбэка в банках и отметьте их в приложении"), Tab.CARDS, quick = "cashback")
                 }

@@ -2,6 +2,7 @@
 
 package app.calstats.ui
 
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -310,6 +311,7 @@ private fun LazyListScope.overview(vm: MainViewModel, month: YearMonth, onTx: (T
         }
     }
     bankInbox(vm)
+    forecastCard(vm)
     savingsCard(vm) { onView("DEBTS") }
     debtsOverview(vm, onDebts = { onView("DEBTS") }, onOpen = { vm.openDebt = it.id }, onNew = { onView("DEBTS"); vm.newDebt = true })
     trendsCard(vm)
@@ -973,6 +975,12 @@ fun TxSheet(vm: MainViewModel, t: Transaction, onDismiss: () -> Unit) {
     var category by remember { mutableStateOf(t.categoryId) }
     var date by remember { mutableStateOf(t.localDate) }
     var note by remember { mutableStateOf(t.note) }
+    var photo by remember { mutableStateOf(t.photo) }
+    val photoFile = remember { java.io.File(ctx.filesDir, "receipts").apply { mkdirs() }.let { java.io.File(it, "${t.id}.jpg") } }
+    val takePhoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok && photoFile.length() > 0) photo = "receipts/${t.id}.jpg" }
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) runCatching { ctx.contentResolver.openInputStream(uri)?.use { i -> photoFile.outputStream().use { i.copyTo(it) } }; photo = "receipts/${t.id}.jpg" }
+    }
     var done by remember { mutableStateOf(false) }
     val accounts = w.accounts.filter { !it.archived || it.id == t.accountId }
 
@@ -989,7 +997,7 @@ fun TxSheet(vm: MainViewModel, t: Transaction, onDismiss: () -> Unit) {
                     type = type, amount = a, accountId = account,
                     toAccountId = if (type == TxType.TRANSFER) toAccount else null,
                     categoryId = if (type == TxType.TRANSFER) null else category,
-                    date = date.toString(), note = note.trim(),
+                    date = date.toString(), note = note.trim(), photo = photo,
                 ),
             )
         }
@@ -1056,6 +1064,22 @@ fun TxSheet(vm: MainViewModel, t: Transaction, onDismiss: () -> Unit) {
             }
             OutlinedTextField(note, { note = it }, label = { Text("Комментарий") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+            // Фото чека
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (photo != null) {
+                    val bmp = remember(photo) { runCatching { android.graphics.BitmapFactory.decodeFile(photoFile.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = 8 }) }.getOrNull() }
+                    bmp?.let {
+                        androidx.compose.foundation.Image(it.asImageBitmap(), "Чек", Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).clickable {
+                            val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", photoFile)
+                            runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(uri, "image/jpeg").addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
+                        }, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                    }
+                    TextButton(onClick = { photo = null; photoFile.delete() }) { Text("Убрать фото") }
+                } else {
+                    OutlinedButton(onClick = { runCatching { takePhoto.launch(androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", photoFile)) } }) { Text("📷 Фото чека") }
+                    OutlinedButton(onClick = { pickPhoto.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("🖼") }
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (exists) OutlinedButton(onClick = {
                     done = true
@@ -1117,3 +1141,52 @@ private fun ImportDialog(vm: MainViewModel, rows: List<BankImport.Row>, onDismis
 
 @Suppress("unused")
 private fun keepTypes(c: FinCategory) = c
+
+
+/** Прогноз до зарплаты (дни зарплаты — в настройке карточки). */
+private fun LazyListScope.forecastCard(vm: MainViewModel) {
+    if (vm.work.accounts.none { !it.archived }) return
+    item(key = "forecast") {
+        val ctx = LocalContext.current
+        val sp = remember { ctx.getSharedPreferences("finance", android.content.Context.MODE_PRIVATE) }
+        var paydays by remember { mutableStateOf(sp.getString("paydays", "5,20")!!.split(',').mapNotNull { it.trim().toIntOrNull() }) }
+        var edit by remember { mutableStateOf(false) }
+        val f = remember(vm.work, paydays, vm.today) { app.calstats.work.Forecast.compute(vm.work, vm.today, paydays) }
+        Card(onClick = { edit = true }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("До зарплаты ${f.days} ${Fmt.plural(f.days, "день", "дня", "дней")} · ${Fmt.dateNoYear(f.payday)}", style = MaterialTheme.typography.titleSmall)
+                Row {
+                    Column(Modifier.weight(1f)) {
+                        Text(money(f.perDay), style = MaterialTheme.typography.titleLarge)
+                        Text("можно тратить в день", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(SplitMath.money(f.left, sign = true), style = MaterialTheme.typography.titleLarge,
+                            color = if (f.left < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                        Text("останется при обычных тратах", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Text("Средние траты ${money(f.avgDay)}/день" + if (f.bills > 0) " · платежи до зарплаты ${money(f.bills)}" else "",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (f.left < 0) Text("⚠ При таком темпе денег не хватит — сократите траты до ${money(f.perDay)} в день", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+        }
+        if (edit) {
+            var txt by remember { mutableStateOf(paydays.joinToString(", ")) }
+            AlertDialog(
+                onDismissRequest = { edit = false },
+                title = { Text("Дни зарплаты") },
+                text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Числа месяца через запятую, например «5, 20» (аванс и зарплата).", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(txt, { txt = it.filter { c -> c.isDigit() || c == ',' || c == ' ' } }, singleLine = true)
+                } },
+                confirmButton = { TextButton(onClick = {
+                    val l = txt.split(',').mapNotNull { it.trim().toIntOrNull()?.takeIf { d -> d in 1..31 } }.distinct().sorted()
+                    if (l.isNotEmpty()) { paydays = l; sp.edit().putString("paydays", l.joinToString(",")).apply() }
+                    edit = false
+                }) { Text("Сохранить") } },
+                dismissButton = { TextButton(onClick = { edit = false }) { Text("Отмена") } },
+            )
+        }
+    }
+}

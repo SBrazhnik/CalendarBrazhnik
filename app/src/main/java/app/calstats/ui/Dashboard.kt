@@ -864,6 +864,13 @@ private fun QuickActions(vm: MainViewModel, onTx: (app.calstats.work.Transaction
                 contentAlignment = Alignment.Center,
             ) { Icon(painterResource(app.calstats.R.drawable.ic_mic_tile), "Голосом", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimary) }
         }
+        if (java.time.LocalTime.now().hour < 12) {
+            Box(
+                Modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.secondaryContainer)
+                    .clickable { vm.morning = true }.padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("☀ План дня", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer) }
+        }
         if (java.time.LocalTime.now().hour >= 18) {
             Box(
                 Modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.secondaryContainer)

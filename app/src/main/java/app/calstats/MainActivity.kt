@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
                 "voice" -> vm.quickInput = true
                 "text" -> vm.quickInput = false
                 "checkin" -> vm.checkIn = true
+                "morning" -> vm.morning = true
                 "water" -> vm.message = "✓ " + vm.applySmart(app.calstats.work.SmartInput.Result(app.calstats.work.SmartInput.Kind.WATER, "250 мл", ml = 250))
                 "cashback" -> { vm.subViews["cards"] = "CASHBACK"; vm.tab = Tab.CARDS }
                 "cards" -> { if (!vm.isEnabled(Tab.CARDS)) vm.setModuleEnabled(Tab.CARDS, true); vm.tab = Tab.CARDS }
@@ -183,6 +184,7 @@ fun App(vm: MainViewModel) {
     vm.quickInput?.let { app.calstats.ui.QuickInputSheet(vm, it) }
     vm.pendingTx?.let { t -> app.calstats.ui.TxSheet(vm, t) { vm.pendingTx = null } }
     if (vm.checkIn) app.calstats.ui.CheckInSheet(vm)
+    if (vm.morning) app.calstats.ui.MorningSheet(vm)
     vm.focus?.let { app.calstats.ui.FocusDialog(vm, it) }
     if (!vm.whatsNewChecked && vm.stack.size == 1) app.calstats.ui.WhatsNewDialog(vm)
 

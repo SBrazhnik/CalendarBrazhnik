@@ -28,9 +28,21 @@ data class Habit(
     /** Отмечать автоматически по Samsung Health: STEPS (шагов ≥ autoMin) или SLEEP (минут сна ≥ autoMin). */
     val auto: String? = null,
     val autoMin: Int = 0,
+    /** «Заморозка»: дни болезни/отпуска — не нужны и серию не рвут. */
+    val frozen: List<String> = emptyList(),
 ) {
     val createdDate: LocalDate get() = runCatching { LocalDate.parse(created) }.getOrDefault(LocalDate.now())
-    fun scheduled(d: LocalDate) = d.dayOfWeek.value in days
+    fun scheduled(d: LocalDate) = d.dayOfWeek.value in days && d.toString() !in frozen
+    fun isFrozen(d: LocalDate) = d.toString() in frozen
+}
+
+/** Награды за серии. */
+object HabitRewards {
+    val LEVELS = listOf(3 to "🌱", 7 to "🥉", 14 to "🥈", 30 to "🥇", 60 to "🏅", 100 to "🏆", 200 to "💎", 365 to "👑")
+    fun badge(streak: Int): Pair<Int, String>? = LEVELS.lastOrNull { streak >= it.first }
+    fun next(streak: Int): Pair<Int, String>? = LEVELS.firstOrNull { streak < it.first }
+    /** Отметка дала новую награду? */
+    fun reached(before: Int, after: Int): Pair<Int, String>? = LEVELS.firstOrNull { before < it.first && after >= it.first }
 }
 
 /** Отметка за день. Для «делать» — сколько сделано; для «бросить» — 1 сорвался, 0 удержался. */
@@ -135,13 +147,25 @@ object HabitOps {
         var out = w
         w.habits.filter { !it.archived && it.auto != null && it.autoMin > 0 }.forEach { h ->
             s.days.forEachIndexed { i, d ->
-                val v = when (h.auto) { "STEPS" -> s.steps.getOrNull(i); "SLEEP" -> s.sleepMin.getOrNull(i); else -> null } ?: return@forEachIndexed
+                val v = when (h.auto) {
+                    "STEPS" -> s.steps.getOrNull(i); "SLEEP" -> s.sleepMin.getOrNull(i)
+                    "WATER" -> w.waterLog.filter { it.date == d.toString() }.sumOf { it.ml }.toLong()
+                    else -> null
+                } ?: return@forEachIndexed
                 val cur = HabitMath.values(out.habitLogs, h.id)[d] ?: 0
                 if (v >= h.autoMin && cur < h.target) out = set(out, h.id, d, h.target)
             }
         }
         return out
     }
+
+    /** Заморозить на n дней начиная с from (или разморозить, если уже заморожено). */
+    fun freeze(w: Workspace, id: String, from: LocalDate, n: Int): Workspace = w.copy(habits = w.habits.map { h ->
+        if (h.id != id) h else {
+            val days = (0 until n).map { from.plusDays(it.toLong()).toString() }
+            if (n == 0) h.copy(frozen = h.frozen.filter { LocalDate.parse(it).isBefore(from) }) else h.copy(frozen = (h.frozen + days).distinct())
+        }
+    })
 
     fun tap(w: Workspace, h: Habit, date: LocalDate): Workspace {
         val cur = HabitMath.values(w.habitLogs, h.id)[date] ?: 0

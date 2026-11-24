@@ -126,3 +126,45 @@ private fun Block(title: String, content: @Composable () -> Unit) {
         }
     }
 }
+
+/** «План дня» утром: мой день + три главных дела (станут задачами на сегодня). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MorningSheet(vm: MainViewModel) {
+    val top = remember { androidx.compose.runtime.mutableStateListOf("", "", "") }
+    fun done() {
+        val list = top.map { it.trim() }.filter { it.isNotBlank() }
+        if (list.isNotEmpty()) {
+            vm.updateWork { w0 ->
+                var w = w0
+                if (w.projects.none { !it.archived }) w = app.calstats.work.WorkOps.upsertProject(w, app.calstats.work.Project(app.calstats.work.newId(), "ЛИЧ", "Личное", app.calstats.work.PALETTE[0]))
+                val p = w.projects.first { !it.archived }
+                list.forEach { t ->
+                    w = app.calstats.work.WorkOps.createIssue(w, app.calstats.work.Issue(app.calstats.work.newId(), p.id, 0, t, assigneeId = app.calstats.work.ME,
+                        due = vm.today.toString(), priority = app.calstats.work.Priority.HIGH, labels = listOf("главное"))).first
+                }
+                w
+            }
+            if (!vm.isEnabled(Tab.TASKS)) vm.setModuleEnabled(Tab.TASKS, true)
+            vm.message = "Главное на сегодня: ${list.size} — в задачах"
+        }
+        vm.morning = false
+    }
+    ModalBottomSheet(onDismissRequest = { done() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).navigationBarsPadding().imePadding(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("☀ План на ${app.calstats.Fmt.dayTitle(vm.today, vm.today).lowercase()}", style = MaterialTheme.typography.headlineSmall)
+            MyDayCard(vm)
+            Block("Три главных дела") {
+                top.forEachIndexed { i, v ->
+                    OutlinedTextField(v, { top[i] = it }, Modifier.fillMaxWidth(), placeholder = { Text("${i + 1}.") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                }
+            }
+            Button(onClick = { done() }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Хорошего дня") }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}

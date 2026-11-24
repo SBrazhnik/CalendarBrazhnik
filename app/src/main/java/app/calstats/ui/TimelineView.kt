@@ -30,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +40,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -283,9 +287,25 @@ private fun DayColumn(vm: MainViewModel, day: LocalDate, events: List<EventInsta
             val height: Dp = (HOUR * ((p.endMin - p.startMin) / 60f)).coerceAtLeast(18.dp)
             val w = colW / p.cols
             val e = p.e
+            // Долгое нажатие и перетаскивание — перенести событие (шаг 15 минут)
+            var drag by remember(e.eventId, e.begin) { androidx.compose.runtime.mutableFloatStateOf(0f) }
+            val hourPx = with(density) { HOUR.toPx() }
+            val snap = (drag / hourPx * 60 / 15).let { kotlin.math.round(it).toInt() } * 15
             Box(
                 Modifier
-                    .offset(x = w * p.col, y = top)
+                    .offset(x = w * p.col, y = top + with(density) { (snap / 60f * hourPx).toDp() })
+                    .zIndex(if (drag != 0f) 2f else 0f)
+                    .pointerInput(e.eventId, e.begin) {
+                        detectDragGesturesAfterLongPress(
+                            onDrag = { change, amount -> change.consume(); drag += amount.y },
+                            onDragEnd = {
+                                val s = (drag / hourPx * 60 / 15).let { kotlin.math.round(it).toInt() } * 15
+                                drag = 0f
+                                vm.moveEvent(e, s)
+                            },
+                            onDragCancel = { drag = 0f },
+                        )
+                    }
                     .width(w - 2.dp)
                     .height(height - 1.dp)
                     .clip(RoundedCornerShape(6.dp))

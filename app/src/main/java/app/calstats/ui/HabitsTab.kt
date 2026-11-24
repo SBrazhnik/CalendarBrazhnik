@@ -270,12 +270,13 @@ private fun DoCard(vm: MainViewModel, h: Habit, weekStart: LocalDate, onOpen: ()
                 HabitTitle(
                     h.emoji, h.name,
                     listOfNotNull(
-                        if (streak > 0) "🔥 $streak" else null,
+                        if (streak > 0) "🔥 $streak" + (app.calstats.work.HabitRewards.badge(streak)?.let { " ${it.second}" } ?: "") else null,
+                        if (h.isFrozen(vm.today)) "❄ заморожено" else null,
                         if (h.target > 1) "сегодня $todayV/${h.target} ${h.unit}".trim() else h.unit.takeIf { it.isNotBlank() },
                         h.perWeek?.let { "${HabitMath.weekCount(h, v, vm.today)}/$it за неделю" },
                         if (h.perWeek == null && h.days.size < 7) h.days.sorted().joinToString(",") { Fmt.weekdayShort(it - 1).lowercase() } else null,
                         h.remind?.let { "⏰ $it" },
-                        when (h.auto) { "STEPS" -> "🚶 авто"; "SLEEP" -> "😴 авто"; else -> null },
+                        when (h.auto) { "STEPS" -> "🚶 авто"; "SLEEP" -> "😴 авто"; "WATER" -> "💧 авто"; else -> null },
                     ).joinToString(" · ").ifEmpty { "каждый день" },
                     color,
                     Modifier.weight(1f),
@@ -285,7 +286,12 @@ private fun DoCard(vm: MainViewModel, h: Habit, weekStart: LocalDate, onOpen: ()
                     val future = d.isAfter(vm.today)
                     val fill = if (future || !h.scheduled(d) || d.isBefore(h.createdDate.minusDays(60))) null
                     else ((v[d] ?: 0).toFloat() / h.target)
-                    DayDot(fill, color, d == vm.today, onClick = if (future) null else ({ vm.updateWork { HabitOps.tap(it, h, d) } }))
+                    DayDot(fill, color, d == vm.today, onClick = if (future) null else ({
+                        val before = HabitMath.streak(h, v, vm.today)
+                        vm.updateWork { HabitOps.tap(it, h, d) }
+                        val after = HabitMath.streak(h, HabitMath.values(vm.work.habitLogs, h.id), vm.today)
+                        app.calstats.work.HabitRewards.reached(before, after)?.let { (n, e) -> vm.message = "$e Награда: $n дней подряд — «${h.name}»!" }
+                    }))
                 }
             }
         }
@@ -395,6 +401,21 @@ private fun HabitDetailSheet(vm: MainViewModel, id: String, onEdit: (Habit) -> U
                     StatBox(HabitMath.best(h, v, vm.today).toString(), "рекорд")
                     StatBox("${HabitMath.rate(h, v, vm.today)}%", "за 30 дней")
                     StatBox(v.count { it.value >= h.target }.toString(), "всего дней")
+                }
+            }
+            if (h != null && !isAlcohol && h.kind == HabitKind.DO) {
+                val st = HabitMath.streak(h, v, vm.today)
+                // Награды и «заморозка»
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    app.calstats.work.HabitRewards.LEVELS.forEach { (n, e) ->
+                        Text(if (HabitMath.best(h, v, vm.today) >= n) e else "·", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                app.calstats.work.HabitRewards.next(st)?.let { (n, e) -> Text("До награды $e — ещё ${n - st} дн.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("❄ Заморозить:", style = MaterialTheme.typography.labelLarge)
+                    listOf(1, 3, 7, 14).forEach { n -> TextButton(onClick = { vm.updateWork { HabitOps.freeze(it, h.id, vm.today, n) }; vm.message = "❄ «${h.name}» на паузе $n дн. — серия сохранится" }) { Text("$n дн.") } }
+                    if (h.isFrozen(vm.today)) TextButton(onClick = { vm.updateWork { HabitOps.freeze(it, h.id, vm.today, 0) } }) { Text("Снять") }
                 }
             }
             if (h != null && !isAlcohol) {
@@ -562,6 +583,9 @@ private fun HabitDialog(vm: MainViewModel, h: Habit, onDismiss: () -> Unit) {
                         }
                         listOf(7, 8).forEach { hh ->
                             FilterChip(selected = auto == "SLEEP" && autoMin == hh * 60, onClick = { auto = "SLEEP"; autoMin = hh * 60 }, label = { Text("Сон $hh ч") })
+                        }
+                        listOf(1500, 2000).forEach { ml ->
+                            FilterChip(selected = auto == "WATER" && autoMin == ml, onClick = { auto = "WATER"; autoMin = ml }, label = { Text("Вода ${ml / 1000.0} л".replace(".0 ", " ").replace('.', ',')) })
                         }
                     }
                 }

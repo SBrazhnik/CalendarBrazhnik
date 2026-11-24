@@ -56,8 +56,38 @@ data class Transaction(
     val source: String = "",
     val importKey: String? = null,
     val created: Long = System.currentTimeMillis(),
+    /** Фото чека (путь внутри приложения). */
+    val photo: String? = null,
 ) {
     val localDate: LocalDate get() = runCatching { LocalDate.parse(date) }.getOrDefault(LocalDate.now())
+}
+
+/** Прогноз до зарплаты: сколько останется и сколько можно тратить в день. */
+object Forecast {
+    data class F(val payday: LocalDate, val days: Long, val balance: Long, val bills: Long, val avgDay: Long, val left: Long, val perDay: Long)
+
+    fun nextPayday(today: LocalDate, days: List<Int>): LocalDate {
+        val ds = days.ifEmpty { listOf(5) }.sorted()
+        for (k in 0..2) {
+            val ym = java.time.YearMonth.from(today).plusMonths(k.toLong())
+            ds.forEach { d -> val dt = ym.atDay(d.coerceAtMost(ym.lengthOfMonth())); if (dt.isAfter(today)) return dt }
+        }
+        return today.plusMonths(1)
+    }
+
+    fun compute(w: Workspace, today: LocalDate, paydays: List<Int>): F {
+        val pay = nextPayday(today, paydays)
+        val days = java.time.temporal.ChronoUnit.DAYS.between(today, pay).coerceAtLeast(1)
+        val bal = FinanceMath.total(w)
+        val bills = w.recurrings.filter { it.active && it.type == TxType.EXPENSE && !it.next.isAfter(pay) }.sumOf { it.amount }
+        // средние траты в день за 30 дней без регулярных платежей
+        val from = today.minusDays(30)
+        val spent = w.transactions.filter { it.type == TxType.EXPENSE && it.localDate.isAfter(from) && !it.localDate.isAfter(today) && it.source != "Регулярный платёж" }.sumOf { it.amount }
+        val avg = spent / 30
+        val left = bal - bills - avg * days
+        val per = ((bal - bills) / days).coerceAtLeast(0)
+        return F(pay, days, bal, bills, avg, left, per)
+    }
 }
 
 @Serializable

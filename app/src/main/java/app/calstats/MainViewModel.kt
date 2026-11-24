@@ -373,6 +373,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     /** Вечерний «Итог дня». */
     var checkIn by mutableStateOf(false)
+    /** Утренний «План дня». */
+    var morning by mutableStateOf(false)
     var loanCalc by mutableStateOf(false)
     /** Карта, пришедшая из файла .pkpass или «Поделиться», — откроется в модуле «Карты». */
     var pendingCard by mutableStateOf<app.calstats.work.LoyaltyCard?>(null)
@@ -942,6 +944,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 message = "Ошибка: ${e.message}"
             }
+        }
+    }
+
+    /** Перетаскивание события в сетке дня/недели: сдвиг на deltaMin минут (только неповторяющиеся). */
+    fun moveEvent(e: EventInstance, deltaMin: Int) {
+        if (deltaMin == 0) return
+        viewModelScope.launch {
+            val d = withContext(Dispatchers.IO) { repo.event(e.eventId) }
+            if (d == null) { message = "Событие не найдено"; return@launch }
+            if (d.recurring) { message = "Повторяющееся событие перенесите в редакторе"; return@launch }
+            val shift = deltaMin * 60_000L
+            val ok = withContext(Dispatchers.IO) {
+                repo.update(d.id, d.title, d.description, d.dtStart + shift, (d.dtEnd ?: (d.dtStart + 3600_000L)) + shift, d.allDay, d.colorKey, null, d.reminders)
+            }
+            if (ok) {
+                val t = java.time.Instant.ofEpochMilli(d.dtStart + shift).atZone(zone)
+                message = "«${d.title}» → ${Fmt.dayTitle(t.toLocalDate(), today).lowercase()}, ${Fmt.time(t.toLocalTime())}"
+                calendars.firstOrNull { it.id == d.calendarId }?.let { repo.requestSync(listOf(it)) }
+                reload()
+            } else message = "Не удалось перенести (календарь только для чтения?)"
         }
     }
 

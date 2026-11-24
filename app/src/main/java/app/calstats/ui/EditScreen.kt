@@ -4,6 +4,7 @@ package app.calstats.ui
 
 import android.app.TimePickerDialog
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -262,6 +263,30 @@ fun EditScreen(vm: MainViewModel, screen: Screen.Edit, snackbar: SnackbarHostSta
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            // Шаблоны: одно нажатие — название, длительность и напоминание
+            if (isNew) {
+                val tctx = androidx.compose.ui.platform.LocalContext.current
+                var tpls by remember { mutableStateOf(app.calstats.EventTemplates.list(tctx)) }
+                androidx.compose.foundation.layout.Row(
+                    Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    tpls.forEach { t ->
+                        androidx.compose.material3.FilterChip(
+                            selected = title == t.title,
+                            onClick = { title = t.title; allDay = false; end = start.plusMinutes(t.minutes.toLong()); reminders = listOf(t.remind) },
+                            label = { Text("${t.title} · ${if (t.minutes % 60 == 0) "${t.minutes / 60} ч" else "${t.minutes} мин"}") },
+                        )
+                    }
+                    if (title.isNotBlank() && tpls.none { it.title == title } && !allDay) androidx.compose.material3.AssistChip(
+                        onClick = {
+                            app.calstats.EventTemplates.add(tctx, app.calstats.EventTemplates.T(title.trim(), java.time.Duration.between(start, end).toMinutes().toInt().coerceAtLeast(5), reminders.firstOrNull() ?: 15))
+                            tpls = app.calstats.EventTemplates.list(tctx); vm.message = "Шаблон «${title.trim()}» сохранён"
+                        },
+                        label = { Text("+ Сохранить как шаблон") },
+                    )
+                }
             }
             HorizontalDivider()
 
