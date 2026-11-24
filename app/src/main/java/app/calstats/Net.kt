@@ -86,6 +86,39 @@ object Net {
         return out
     }
 
+    /** Найденная бесплатная книга (общественное достояние, Project Gutenberg). */
+    data class FreeBook(val id: Int, val title: String, val authors: String, val lang: String, val downloads: Int, val epub: String?, val txt: String?)
+
+    /** Поиск в Project Gutenberg через открытый каталог Gutendex. lang: "ru", "en" или "" (все). */
+    fun searchFree(q: String, lang: String): List<FreeBook> {
+        val url = "https://gutendex.com/books/?search=" + java.net.URLEncoder.encode(q, "UTF-8") + if (lang.isNotBlank()) "&languages=$lang" else ""
+        val a = JSONObject(get(url)).optJSONArray("results") ?: return emptyList()
+        return (0 until a.length()).map { i ->
+            val o = a.getJSONObject(i)
+            val f = o.optJSONObject("formats") ?: JSONObject()
+            fun fmt(prefix: String) = f.keys().asSequence().firstOrNull { it.startsWith(prefix) && !f.optString(it).endsWith(".zip") }?.let { f.optString(it) }
+            val authors = o.optJSONArray("authors")?.let { au -> (0 until au.length()).joinToString { k -> au.getJSONObject(k).optString("name").split(", ").reversed().joinToString(" ") } }.orEmpty()
+            FreeBook(o.optInt("id"), o.optString("title"), authors, o.optJSONArray("languages")?.optString(0).orEmpty(), o.optInt("download_count"),
+                fmt("application/epub+zip"), fmt("text/plain"))
+        }
+    }
+
+    /** Скачать файл в папку приложения. */
+    fun download(url: String, to: java.io.File) {
+        var u = url
+        repeat(5) {
+            val c = URL(u).openConnection() as HttpURLConnection
+            c.connectTimeout = 15_000; c.readTimeout = 60_000; c.instanceFollowRedirects = false
+            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Android) ZelenyiRitm")
+            if (c.responseCode in 300..399) { u = java.net.URL(URL(u), c.getHeaderField("Location")).toString(); c.disconnect(); return@repeat }
+            if (c.responseCode !in 200..299) error("Сервер ответил ${c.responseCode}")
+            to.parentFile?.mkdirs()
+            c.inputStream.use { i -> to.outputStream().use { i.copyTo(it) } }
+            return
+        }
+        error("Слишком много перенаправлений")
+    }
+
     data class BookInfo(val title: String, val author: String, val pages: Int)
 
     /** Книга по ISBN (Google Книги, без ключа). */

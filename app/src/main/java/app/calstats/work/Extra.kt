@@ -202,9 +202,20 @@ data class Book(
     val created: Long = System.currentTimeMillis(),
     val quotes: List<String> = emptyList(),
     val minutes: Int = 0,
+    /** Электронная книга внутри приложения: путь к файлу (books/…), формат и где остановились. */
+    val file: String? = null,
+    val format: String = "",
+    val position: Int = 0,
+    val positionOffset: Int = 0,
+    val bookmarks: List<BookMark> = emptyList(),
+    val source: String = "",
 ) {
     val progress: Float get() = if (status == BookStatus.DONE) 1f else if (total > 0) (current.toFloat() / total).coerceIn(0f, 1f) else 0f
+    val isEbook: Boolean get() = file != null
 }
+
+@Serializable
+data class BookMark(val para: Int, val text: String, val created: Long = System.currentTimeMillis())
 
 @Serializable
 data class ReadLog(val date: String, val bookId: String, val amount: Int, val minutes: Int = 0)

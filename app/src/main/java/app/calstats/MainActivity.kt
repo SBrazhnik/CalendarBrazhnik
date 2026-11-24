@@ -202,6 +202,7 @@ fun App(vm: MainViewModel) {
         Screen.Modules -> app.calstats.ui.ModulesScreen(vm, snackbar)
         Screen.Search -> app.calstats.ui.SearchScreen(vm, snackbar)
         Screen.Trash -> app.calstats.ui.TrashScreen(vm, snackbar)
+        is Screen.Reader -> app.calstats.ui.ReaderScreen(vm, screen.bookId)
         is Screen.NoteEdit -> app.calstats.ui.NoteEditScreen(vm, screen.id, snackbar)
         is Screen.WishListDetail -> app.calstats.ui.WishListScreen(vm, screen.id, snackbar)
         is Screen.DocEdit -> app.calstats.ui.DocEditScreen(vm, screen.id, snackbar)

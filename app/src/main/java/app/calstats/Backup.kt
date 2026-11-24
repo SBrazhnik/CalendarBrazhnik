@@ -21,7 +21,7 @@ import java.util.zip.ZipOutputStream
  */
 object Backup {
     private val PREFS = listOf("calstats_ui", "notify", "cal_export", "usage")
-    private val DIRS = listOf("docs", "cards", "notes", "receipts", "journal")
+    private val DIRS = listOf("docs", "cards", "notes", "receipts", "journal", "books")
     private val FILES = listOf("avatar.jpg", "avatar_src.jpg")
     const val KEEP = 7
 

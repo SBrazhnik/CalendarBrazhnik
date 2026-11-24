@@ -676,6 +676,11 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var goalEdit by remember { mutableStateOf(false) }
     var progressFor by remember { mutableStateOf<Book?>(null) }
     var timerMin by remember { mutableStateOf(0) }
+    var freeSearch by remember { mutableStateOf(false) }
+    val ctxR = androidx.compose.ui.platform.LocalContext.current
+    val openBook = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) app.calstats.ui.importEbook(ctxR, vm, uri)
+    }
     // Таймер чтения: какая книга и с какого момента
     var timing by rememberSaveable { mutableStateOf<String?>(null) }
     var timingStart by rememberSaveable { mutableStateOf(0L) }
@@ -696,6 +701,12 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
         }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { freeSearch = true }, Modifier.weight(1f)) { Text("🔎 Бесплатные книги") }
+                OutlinedButton(onClick = { openBook.launch(arrayOf("application/epub+zip", "application/x-fictionbook+xml", "application/zip", "text/plain", "application/octet-stream")) }, Modifier.weight(1f)) { Text("📂 Открыть файл") }
+            }
+        }
         if (w.readBooks.isEmpty()) item { Tip("Добавьте книгу или курс. Отмечайте, сколько прочитали, — приложение посчитает прогресс, серию дней и цель на год.") }
         BookStatus.entries.forEach { st ->
             val list = w.readBooks.filter { it.status == st }.let { l -> if (st == BookStatus.DONE) l.sortedByDescending { it.finished } else l.sortedByDescending { it.created } }
@@ -709,7 +720,8 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                                     Text("${b.kind.emoji} ${b.title}", style = MaterialTheme.typography.titleSmall)
                                     if (b.author.isNotBlank()) Tip(b.author)
                                 }
-                                if (st == BookStatus.ACTIVE) {
+                                if (b.isEbook) Button(onClick = { vm.push(app.calstats.Screen.Reader(b.id)) }) { Text("📖 Читать") }
+                                else if (st == BookStatus.ACTIVE) {
                                     if (timing == b.id) {
                                         val sec = (now - timingStart) / 1000
                                         TextButton(onClick = { timerMin = ((sec + 30) / 60).toInt(); timing = null; progressFor = b }) { Text("⏹ ${sec / 60}:${"%02d".format(sec % 60)}") }
@@ -718,7 +730,10 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                                 }
                                 if (st == BookStatus.DONE && b.rating > 0) Text("★".repeat(b.rating))
                             }
-                            if (st == BookStatus.ACTIVE && b.total > 0) {
+                            if (b.isEbook && b.total > 0) {
+                                Bar(b.progress, moduleColor(Tab.READING))
+                                Tip("${(b.progress * 100).toInt()}% прочитано" + (if (b.bookmarks.isNotEmpty()) " · 🔖 ${b.bookmarks.size}" else "") + if (b.minutes > 0) " · ${b.minutes / 60} ч ${b.minutes % 60} мин" else "")
+                            } else if (st == BookStatus.ACTIVE && b.total > 0) {
                                 Bar(b.progress, moduleColor(Tab.READING))
                                 Tip("${b.current} из ${b.total} ${b.kind.unit} · ${(b.progress * 100).toInt()}%" + if (b.minutes > 0) " · ${b.minutes / 60} ч ${b.minutes % 60} мин чтения" else "")
                             }
@@ -729,6 +744,7 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             }
         }
     }
+    if (freeSearch) app.calstats.ui.FreeBooksDialog(vm) { freeSearch = false }
     if (goalEdit) {
         var g by remember { mutableStateOf(w.readingGoal.toString()) }
         AlertDialog(onDismissRequest = { goalEdit = false }, title = { Text("Сколько книг за год") },

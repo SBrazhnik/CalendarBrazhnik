@@ -116,6 +116,7 @@ sealed interface Screen {
     data object Settings : Screen
     data object Search : Screen
     data object Trash : Screen
+    data class Reader(val bookId: String) : Screen
     data object Modules : Screen
     data class NoteEdit(val id: String) : Screen
     data class WishListDetail(val id: String) : Screen
