@@ -6,6 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.async
 
 /** Небольшие запросы в интернет: рецепт по ссылке, курс валют ЦБ, книга по ISBN. */
 object Net {
@@ -129,14 +130,48 @@ object Net {
         return out
     }
 
-    /** Найденная бесплатная книга (общественное достояние, Project Gutenberg). */
-    data class FreeBook(val id: Int, val title: String, val authors: String, val lang: String, val downloads: Int, val epub: String?, val txt: String?)
+    /** Найденная бесплатная книга (общественное достояние). */
+    data class FreeBook(val source: String, val id: String, val title: String, val authors: String, val lang: String, val url: String, val fmt: String)
 
-    /** Поиск в Project Gutenberg: сначала каталог Gutendex, если он не отвечает — сам gutenberg.org. lang: "ru", "en" или "" (все). */
-    fun searchFree(q: String, lang: String): List<FreeBook> {
-        val first = runCatching { gutendex(q, lang) }
-        if (first.isSuccess) return first.getOrThrow()
-        return runCatching { gutenbergOpds(q, lang) }.getOrElse { throw first.exceptionOrNull()!! }
+    /** Результат поиска по всем библиотекам: найденное и ошибки по каждой. */
+    data class FreeSearch(val books: List<FreeBook>, val errors: List<String>)
+
+    /**
+     * Поиск сразу в нескольких открытых библиотеках параллельно:
+     * Викитека (русская классика), Project Gutenberg (через Gutendex и напрямую).
+     */
+    suspend fun searchFree(q: String, lang: String): FreeSearch = kotlinx.coroutines.coroutineScope {
+        val wsLang = if (lang == "en") "en" else "ru"
+        val ws = async(kotlinx.coroutines.Dispatchers.IO) { runCatching { wikisource(q, wsLang) } }
+        val gb = async(kotlinx.coroutines.Dispatchers.IO) {
+            val first = runCatching { gutendex(q, lang) }
+            if (first.isSuccess) first else runCatching { gutenbergOpds(q, lang) }.let { if (it.isSuccess) it else first }
+        }
+        val parts = listOf("Викитека" to ws.await(), "Project Gutenberg" to gb.await())
+        val books = parts.flatMap { it.second.getOrNull().orEmpty() }
+        val errors = parts.filter { it.second.isFailure }.map { "${it.first}: ${why(it.second.exceptionOrNull())}" }
+        if (books.isEmpty() && errors.size == parts.size) throw IllegalStateException(errors.joinToString("\n"))
+        FreeSearch(if (lang == "en") books.sortedBy { it.source != "Project Gutenberg" } else books, errors)
+    }
+
+    private val PAREN = Regex("""^(.*?)\s*\(([^()]+)\)\s*$""")
+    private val TAGS = Regex("<[^>]+>")
+
+    /** Викитека: свободные тексты на русском. Книгу собирает официальный сервис ws-export в EPUB. */
+    private fun wikisource(q: String, lang: String): List<FreeBook> {
+        val url = "https://$lang.wikisource.org/w/api.php?action=query&list=search&format=json&srnamespace=0&srlimit=40&srprop=&srsearch=" +
+            java.net.URLEncoder.encode(q, "UTF-8")
+        val a = JSONObject(get(url, readTimeout = 20_000)).optJSONObject("query")?.optJSONArray("search") ?: return emptyList()
+        return (0 until a.length()).map { a.getJSONObject(it).optString("title") }
+            .filter { it.isNotBlank() && '/' !in it && !it.contains(':') }
+            .distinct().take(20).map { t ->
+                // «Война и мир (Толстой)» → название + автор
+                val m = PAREN.find(t)
+                val title = m?.groupValues?.get(1) ?: t
+                val author = m?.groupValues?.get(2).orEmpty()
+                val page = java.net.URLEncoder.encode(t.replace(' ', '_'), "UTF-8")
+                FreeBook("Викитека", t, title, author, lang, "https://ws-export.wmcloud.org/?format=epub&lang=$lang&page=$page", "epub")
+            }
     }
 
     private fun gutendex(q: String, lang: String): List<FreeBook> {
@@ -144,11 +179,10 @@ object Net {
         val a = JSONObject(get(url, readTimeout = 25_000, tries = 1)).optJSONArray("results") ?: return emptyList()
         return (0 until a.length()).map { i ->
             val o = a.getJSONObject(i)
-            val f = o.optJSONObject("formats") ?: JSONObject()
-            fun fmt(prefix: String) = f.keys().asSequence().firstOrNull { it.startsWith(prefix) && !f.optString(it).endsWith(".zip") }?.let { f.optString(it) }
             val authors = o.optJSONArray("authors")?.let { au -> (0 until au.length()).joinToString { k -> au.getJSONObject(k).optString("name").split(", ").reversed().joinToString(" ") } }.orEmpty()
-            FreeBook(o.optInt("id"), o.optString("title"), authors, o.optJSONArray("languages")?.optString(0).orEmpty(), o.optInt("download_count"),
-                fmt("application/epub+zip"), fmt("text/plain"))
+            val id = o.optInt("id")
+            FreeBook("Project Gutenberg", id.toString(), o.optString("title"), authors, o.optJSONArray("languages")?.optString(0).orEmpty(),
+                "https://www.gutenberg.org/ebooks/$id.epub.noimages", "epub")
         }
     }
 
@@ -159,10 +193,10 @@ object Net {
         fun unesc(t: String) = t.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").trim()
         return Regex("<entry>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL).findAll(xml).mapNotNull { m ->
             val e = m.groupValues[1]
-            val id = Regex("""/ebooks/(\d+)""").find(e)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
+            val id = Regex("""/ebooks/(\d+)""").find(e)?.groupValues?.get(1) ?: return@mapNotNull null
             val title = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL).find(e)?.groupValues?.get(1)?.let(::unesc).orEmpty()
-            val author = Regex("<content[^>]*>(.*?)</content>", RegexOption.DOT_MATCHES_ALL).find(e)?.groupValues?.get(1)?.let { unesc(it.replace(Regex("<[^>]+>"), " ")) }.orEmpty()
-            FreeBook(id, title, author, lang, 0, "https://www.gutenberg.org/ebooks/$id.epub3.images", "https://www.gutenberg.org/ebooks/$id.txt.utf-8")
+            val author = Regex("<content[^>]*>(.*?)</content>", RegexOption.DOT_MATCHES_ALL).find(e)?.groupValues?.get(1)?.let { unesc(it.replace(TAGS, " ")) }.orEmpty()
+            FreeBook("Project Gutenberg", id, title, author, lang, "https://www.gutenberg.org/ebooks/$id.epub.noimages", "epub")
         }.distinctBy { it.id }.toList()
     }
 
@@ -171,12 +205,18 @@ object Net {
         var u = url
         repeat(5) {
             val c = URL(u).openConnection() as HttpURLConnection
-            c.connectTimeout = 15_000; c.readTimeout = 60_000; c.instanceFollowRedirects = false
+            c.connectTimeout = 15_000; c.readTimeout = 150_000; c.instanceFollowRedirects = false
             c.setRequestProperty("User-Agent", UA)
             if (c.responseCode in 300..399) { u = java.net.URL(URL(u), c.getHeaderField("Location")).toString(); c.disconnect(); return@repeat }
             if (c.responseCode !in 200..299) throw HttpError(c.responseCode)
             to.parentFile?.mkdirs()
             c.inputStream.use { i -> to.outputStream().use { i.copyTo(it) } }
+            c.disconnect()
+            // EPUB — это zip: если пришла веб-страница с ошибкой, книги нет
+            if (to.extension == "epub") {
+                val sig = to.inputStream().use { s -> ByteArray(2).also { s.read(it) } }
+                if (!(sig[0] == 'P'.code.toByte() && sig[1] == 'K'.code.toByte())) { to.delete(); error("библиотека не смогла собрать книгу, попробуйте другую") }
+            }
             return
         }
         error("Слишком много перенаправлений")

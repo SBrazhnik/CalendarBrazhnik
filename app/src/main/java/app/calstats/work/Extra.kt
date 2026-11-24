@@ -215,7 +215,7 @@ data class Book(
 }
 
 @Serializable
-data class BookMark(val para: Int, val text: String, val created: Long = System.currentTimeMillis())
+data class BookMark(val para: Int, val text: String, val created: Long = System.currentTimeMillis(), val off: Int = 0)
 
 @Serializable
 data class ReadLog(val date: String, val bookId: String, val amount: Int, val minutes: Int = 0)

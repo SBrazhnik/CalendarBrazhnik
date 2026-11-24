@@ -70,6 +70,24 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/vnd.apple.pkpass" />
             </intent-filter>
+            <!-- Электронные книги: «Открыть с помощью» из браузера и файлов -->
+            <intent-filter android:label="Читать в Зелёный ритм">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/x-fictionbook+xml" />
+                <data android:mimeType="application/x-fictionbook" />
+                <data android:mimeType="application/x-zip-compressed-fb2" />
+            </intent-filter>
+            <intent-filter android:label="Читать в Зелёный ритм">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/x-fictionbook+xml" />
+            </intent-filter>
             <!-- «Поделиться → Личный календарь» из заметок, браузера, маркетплейсов -->
             <intent-filter android:label="В Зелёный ритм">
                 <action android:name="android.intent.action.SEND" />

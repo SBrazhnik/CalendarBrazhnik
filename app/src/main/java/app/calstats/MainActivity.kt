@@ -87,6 +87,17 @@ class MainActivity : ComponentActivity() {
     private fun handleShare(intent: Intent?) {
         // Файл карты .pkpass: «Открыть с помощью» или «Поделиться»
         val stream = intent?.data ?: (if (intent?.action == Intent.ACTION_SEND) intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM) else null)
+        // Электронная книга: «Открыть с помощью → Зелёный ритм»
+        val t = intent?.type.orEmpty()
+        val path = stream?.toString()?.lowercase().orEmpty()
+        if (stream != null && (t == "application/epub+zip" || t.contains("fictionbook") || t.contains("fb2") || path.endsWith(".epub") || path.endsWith(".fb2") || path.endsWith(".fb2.zip"))) {
+            intent?.data = null
+            vm.stack.clear(); vm.stack.add(Screen.Main)
+            if (!vm.isEnabled(Tab.READING)) vm.setModuleEnabled(Tab.READING, true)
+            vm.tab = Tab.READING
+            app.calstats.ui.importEbook(this, vm, stream, t.ifBlank { null })
+            return
+        }
         if (stream != null && (intent?.type?.contains("pkpass") == true || stream.toString().endsWith(".pkpass", true) || intent?.action == Intent.ACTION_VIEW)) {
             app.calstats.ui.importPkpass(this, stream)?.let { c ->
                 vm.pendingCard = c
