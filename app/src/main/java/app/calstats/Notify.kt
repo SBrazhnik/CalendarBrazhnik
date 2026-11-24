@@ -1,5 +1,7 @@
 package app.calstats
 
+import app.calstats.work.foodDaysLeft
+
 import android.Manifest
 import android.app.AlarmManager
 import android.app.NotificationChannel
@@ -257,6 +259,12 @@ object Notify {
             out += "${e.type.emoji} ${w.pets.firstOrNull { it.id == e.petId }?.name.orEmpty()}: ${e.type.title.lowercase()}"
         }
         w.cars.forEach { c ->
+            c.osagoUntil?.let { java.time.LocalDate.parse(it) }?.let { d -> val l = java.time.temporal.ChronoUnit.DAYS.between(today, d); if (l in listOf(30L, 14L, 7L, 1L, 0L)) out += "🛡 ${c.name}: ОСАГО заканчивается ${Fmt.dateNoYear(d)}" }
+            if (today.dayOfMonth in listOf(1, 15)) app.calstats.work.CarHints.tires(w.carEvents, c.id, today)?.let { out += "${c.name}: $it" }
+            w.carEvents.filter { it.carId == c.id && it.type == app.calstats.work.CarEventType.FINE && it.unpaid }.forEach { f ->
+                val l = java.time.temporal.ChronoUnit.DAYS.between(today, app.calstats.work.CarHints.discountUntil(f))
+                if (l in 0..3) out += "🚓 Штраф ${SplitMath.money(f.cost)}: скидка 50% ещё $l дн."
+            }
             app.calstats.work.CarMath.nextService(c, w.carEvents, today)?.let { n ->
                 if ((n.daysLeft ?: 99) in 0..7 || (n.kmLeft ?: 9999) in 0..500) out += "🔧 ${c.name}: пора на ТО"
             }
@@ -268,6 +276,9 @@ object Notify {
             c.coupons.filter { it.until != null && runCatching { java.time.LocalDate.parse(it.until) }.getOrNull()?.let { d -> !d.isBefore(today) && !d.isAfter(today.plusDays(2)) } == true }
                 .forEach { k -> out += "🎟 ${c.store}: «${k.text}» до ${Fmt.dateNoYear(java.time.LocalDate.parse(k.until))}" }
         }
+        w.meters.forEach { m -> m.verifyUntil?.let { java.time.LocalDate.parse(it) }?.let { d -> if (java.time.temporal.ChronoUnit.DAYS.between(today, d) in listOf(60L, 30L, 7L)) out += "🔍 Поверка счётчика «${m.name}» до ${Fmt.dateNoYear(d)}" } }
+        w.pets.forEach { p -> p.foodDaysLeft(today)?.let { l -> if (l in 0..3) out += "🥫 Корм для ${p.name} закончится через $l дн." } }
+        if (today.dayOfMonth == 1 && w.lifeGoals.any { !it.done && it.year == today.year }) out += "🎯 Новый месяц — 5 минут на разбор целей"
         w.chores.filter { it.daysLeft(today) <= 0 }.takeIf { it.isNotEmpty() }?.let { l -> out += "🧹 По дому: " + l.take(3).joinToString { it.title.lowercase() } + if (l.size > 3) " и ещё ${l.size - 3}" else "" }
         w.plants.filter { it.waterIn(today) <= 0 }.takeIf { it.isNotEmpty() }?.let { l -> out += "🪴 Полить: " + l.joinToString { it.name } }
         w.trips.filter { app.calstats.work.Trips.daysLeft(it, today) in listOf(1L, 3L, 7L) }.forEach { t ->

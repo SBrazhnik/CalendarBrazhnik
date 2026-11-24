@@ -3,6 +3,8 @@
 package app.calstats.ui
 
 import android.content.Intent
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import app.calstats.work.ShopPrice
@@ -85,6 +87,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import app.calstats.work.progressIn
 import app.calstats.work.BankImport
+import app.calstats.work.foodDaysLeft
 import app.calstats.work.Car
 import app.calstats.work.CarEvent
 import app.calstats.work.CarEventType
@@ -327,6 +330,7 @@ fun ShoppingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
 fun GoalsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var year by rememberSaveable { mutableStateOf(vm.today.year) }
     var edit by remember { mutableStateOf<LifeGoal?>(null) }
+    var review by remember { mutableStateOf(false) }
     val goals = vm.work.lifeGoals.filter { it.year == year }
     ModuleScaffold("Цели", snackbar, fab = "Цель" to { edit = LifeGoal(newId(), "", year = year) }) {
         item {
@@ -346,6 +350,19 @@ fun GoalsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         Text("Выполнено целей: ${goals.count { it.done }} из ${goals.size}", style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(8.dp))
                         Bar(avg, moduleColor(Tab.GOALS))
+                    }
+                }
+            }
+            item {
+                val ym = vm.today.toString().take(7)
+                val done = goals.count { ym in it.reviews }
+                Flat(onClick = { review = true }) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("📝 Разбор месяца", style = MaterialTheme.typography.titleSmall)
+                            Hint(if (done == goals.count { !it.done }) "Готово за ${Fmt.monthName(vm.today.monthValue).lowercase()}" else "5 минут: что сделано по каждой цели и какой следующий шаг")
+                        }
+                        Text("$done/${goals.count { !it.done }}", style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }
@@ -384,6 +401,31 @@ fun GoalsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
         }
+    }
+    if (review) {
+        val ym = vm.today.toString().take(7)
+        val active = goals.filter { !it.done }
+        val texts = remember { androidx.compose.runtime.mutableStateMapOf<String, String>().apply { active.forEach { put(it.id, it.reviews[ym].orEmpty()) } } }
+        AlertDialog(
+            onDismissRequest = { review = false },
+            title = { Text("Разбор: ${Fmt.monthName(vm.today.monthValue).lowercase()}") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    active.forEach { g ->
+                        Text("${g.emoji} ${g.title} · ${(g.progressIn(vm.work, vm.today) * 100).toInt()}%", style = MaterialTheme.typography.titleSmall)
+                        g.reviews.entries.filter { it.key != ym }.maxByOrNull { it.key }?.let { Hint("Прошлый раз: ${it.value}") }
+                        OutlinedTextField(texts[g.id].orEmpty(), { texts[g.id] = it }, Modifier.fillMaxWidth(), placeholder = { Text("Что сделал · что дальше") },
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                        TextButton(onClick = { vm.push(app.calstats.Screen.Edit(presetDate = vm.today.plusDays(1), presetTitle = "🎯 ${g.title}")) }) { Text("📅 Запланировать время на цель") }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = {
+                vm.updateWork { w -> w.copy(lifeGoals = w.lifeGoals.map { g -> texts[g.id]?.takeIf { it.isNotBlank() }?.let { g.copy(reviews = g.reviews + (ym to it.trim())) } ?: g }) }
+                review = false; vm.message = "Разбор сохранён"
+            }) { Text("Сохранить") } },
+            dismissButton = { TextButton(onClick = { review = false }) { Text("Отмена") } },
+        )
     }
     edit?.let { g -> GoalDialog(vm, g) { edit = null } }
 }
@@ -479,9 +521,28 @@ fun JournalTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var g by remember(day, e?.updated) { mutableStateOf((e?.gratitude.orEmpty() + listOf("", "", "")).take(3)) }
     var best by remember(day, e?.updated) { mutableStateOf(e?.best.orEmpty()) }
     val changed = text != e?.text.orEmpty() || g.filter { it.isNotBlank() } != e?.gratitude.orEmpty() || best != e?.best.orEmpty()
+    var promptShift by remember(day) { mutableStateOf(0) }
     fun save() = vm.updateWork { w ->
-        val ne = JournalEntry(day, text.trim(), g.map { it.trim() }.filter { it.isNotEmpty() }, best.trim())
+        val old = w.journal.firstOrNull { it.date == day }
+        val ne = JournalEntry(day, text.trim(), g.map { it.trim() }.filter { it.isNotEmpty() }, best.trim(), photos = old?.photos.orEmpty(), tags = old?.tags.orEmpty())
         w.copy(journal = w.journal.filter { it.date != day } + ne)
+    }
+    fun updEntry(f: (JournalEntry) -> JournalEntry) = vm.updateWork { w ->
+        val old = w.journal.firstOrNull { it.date == day } ?: JournalEntry(day)
+        w.copy(journal = w.journal.filter { it.date != day } + f(old).copy(updated = System.currentTimeMillis()))
+    }
+    val pickPhoto = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(5)) { uris ->
+        val names = uris.mapNotNull { u -> runCatching {
+            val dir = java.io.File(ctx.filesDir, "journal").apply { mkdirs() }
+            val f = java.io.File(dir, "$day-${newId()}.jpg")
+            val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            ctx.contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it, null, o) }
+            var s = 1; while (maxOf(o.outWidth, o.outHeight) / s > 1600) s *= 2
+            val bmp = ctx.contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = s }) } ?: return@runCatching null
+            f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }
+            "journal/" + f.name
+        }.getOrNull() }
+        if (names.isNotEmpty()) { if (changed) save(); updEntry { it.copy(photos = it.photos + names) } }
     }
     val streak = Journal.streak(vm.work.journal, vm.today)
     ModuleScaffold("Дневник", snackbar) {
@@ -501,7 +562,10 @@ fun JournalTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         item {
             Flat {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(Journal.prompt(d), style = MaterialTheme.typography.titleSmall, color = moduleColor(Tab.JOURNAL))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(Journal.PROMPTS[(d.dayOfYear + promptShift) % Journal.PROMPTS.size], Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = moduleColor(Tab.JOURNAL))
+                        TextButton(onClick = { promptShift++ }) { Text("🎲") }
+                    }
                     OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), minLines = 5, placeholder = { Text("Что было сегодня…") },
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                 }
@@ -520,13 +584,49 @@ fun JournalTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
         }
+        // Метки и фото дня
+        item {
+            Flat {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Метки дня", style = MaterialTheme.typography.titleSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        (Journal.TAGS + vm.work.journal.flatMap { it.tags }).distinct().forEach { t ->
+                            val on = t in e?.tags.orEmpty()
+                            FilterChip(on, { if (changed) save(); updEntry { x -> x.copy(tags = if (on) x.tags - t else x.tags + t) } }, label = { Text(t) })
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("📷 Фото дня", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { pickPhoto.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("+ фото") }
+                    }
+                    if (e?.photos.orEmpty().isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        e!!.photos.forEach { p -> JournalPhoto(p, Modifier.size(110.dp).clip(RoundedCornerShape(12.dp))) { updEntry { x -> x.copy(photos = x.photos - p) }; java.io.File(ctx.filesDir, p).delete() } }
+                    }
+                }
+            }
+        }
         if (changed) item { Button(onClick = { save(); vm.message = "Сохранено" }, modifier = Modifier.fillMaxWidth()) { Text("Сохранить") } }
+        // Год назад и месяц назад в этот день
+        listOf(1L to "Год назад", 0L to "Месяц назад").forEach { (yrs, label) ->
+            val ago = if (yrs == 1L) d.minusYears(1) else d.minusMonths(1)
+            vm.work.journal.firstOrNull { it.date == ago.toString() && (it.text.isNotBlank() || it.best.isNotBlank() || it.photos.isNotEmpty()) }?.let { old ->
+                item(key = "ago$label") {
+                    Flat(onClick = { if (changed) save(); day = old.date }) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                            Text("🕰 $label · ${Fmt.date(ago)}", style = MaterialTheme.typography.labelLarge, color = moduleColor(Tab.JOURNAL))
+                            Text(old.best.ifBlank { old.text }, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        }
         val past = vm.work.journal.filter { it.date != day && (it.text.isNotBlank() || it.gratitude.isNotEmpty()) }.sortedByDescending { it.date }.take(20)
         if (past.isNotEmpty()) item { Text("Прошлые записи", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
         items(past, key = { it.date }) { p ->
             Flat(onClick = { if (changed) save(); day = p.date }) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                    Text(Fmt.dayTitle(LocalDate.parse(p.date), vm.today), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(Fmt.dayTitle(LocalDate.parse(p.date), vm.today) + (if (p.tags.isNotEmpty()) " · " + p.tags.joinToString(", ") else "") + if (p.photos.isNotEmpty()) " · 📷${p.photos.size}" else "",
+                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(p.text.ifBlank { "🙏 " + p.gratitude.joinToString(", ") }, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
                 }
             }
@@ -580,6 +680,25 @@ fun CarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                             color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                         )
                     } ?: Hint("Запишите последнее ТО — напомню о следующем.")
+                    car.osagoUntil?.let { LocalDate.parse(it) }?.let { d ->
+                        val left = java.time.temporal.ChronoUnit.DAYS.between(vm.today, d)
+                        Text("🛡 ОСАГО до ${Fmt.date(d)}" + if (left in 0..30) " — осталось $left дн." else if (left < 0) " — просрочено!" else "",
+                            style = MaterialTheme.typography.bodySmall, color = if (left <= 30) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    }
+                    car.kaskoUntil?.let { LocalDate.parse(it) }?.let { d -> Text("🛡 КАСКО до ${Fmt.date(d)}", style = MaterialTheme.typography.bodySmall) }
+                    app.calstats.work.CarHints.tires(w.carEvents, car.id, vm.today)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = moduleColor(Tab.CAR)) }
+                    w.carEvents.filter { it.carId == car.id && it.type == CarEventType.FINE && it.unpaid }.forEach { f ->
+                        val until = app.calstats.work.CarHints.discountUntil(f)
+                        val left = java.time.temporal.ChronoUnit.DAYS.between(vm.today, until)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🚓 Штраф ${SplitMath.money(f.cost)}" + if (left >= 0) " — со скидкой 50% (${SplitMath.money(f.cost / 2)}) до ${Fmt.dateNoYear(until)}" else " — не оплачен",
+                                Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            TextButton(onClick = { vm.updateWork { w0 -> w0.copy(carEvents = w0.carEvents.map { if (it.id == f.id) it.copy(unpaid = false) else it }) } }) { Text("Оплачен") }
+                        }
+                    }
+                    val st = app.calstats.work.CarHints.stations(w.carEvents, car.id)
+                    if (st.size >= 2) Text("⛽ Дешевле всего: " + st.take(3).joinToString { "${it.first} ${"%.2f".format(it.second).replace('.', ',')} ₽/л" },
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -602,6 +721,9 @@ fun CarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         var plate by remember { mutableStateOf(c.plate) }
         var km by remember { mutableStateOf(c.serviceKm.toString()) }
         var months by remember { mutableStateOf(c.serviceMonths.toString()) }
+        var osago by remember { mutableStateOf(c.osagoUntil?.let { LocalDate.parse(it) }) }
+        var kasko by remember { mutableStateOf(c.kaskoUntil?.let { LocalDate.parse(it) }) }
+        val cctx = LocalContext.current
         val exists = w.cars.any { it.id == c.id }
         AlertDialog(
             onDismissRequest = { carDialog = null },
@@ -615,6 +737,10 @@ fun CarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         OutlinedTextField(km, { km = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("км") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                         OutlinedTextField(months, { months = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("месяцев") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { pickDate(cctx, osago ?: vm.today.plusYears(1)) { osago = it } }) { Text("ОСАГО " + (osago?.let { "до " + Fmt.dateNoYear(it) } ?: "—")) }
+                        OutlinedButton(onClick = { pickDate(cctx, kasko ?: vm.today.plusYears(1)) { kasko = it } }) { Text("КАСКО " + (kasko?.let { "до " + Fmt.dateNoYear(it) } ?: "—")) }
+                    }
                     if (exists) TextButton(onClick = { vm.updateWork { w0 -> w0.copy(cars = w0.cars.filter { it.id != c.id }, carEvents = w0.carEvents.filter { it.carId != c.id }) }; carDialog = null }) {
                         Text("Удалить машину и записи", color = MaterialTheme.colorScheme.error)
                     }
@@ -622,7 +748,8 @@ fun CarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             },
             confirmButton = {
                 TextButton(enabled = name.isNotBlank(), onClick = {
-                    val nc = c.copy(name = name.trim(), plate = plate.trim(), serviceKm = km.toIntOrNull() ?: 10_000, serviceMonths = months.toIntOrNull() ?: 12)
+                    val nc = c.copy(name = name.trim(), plate = plate.trim(), serviceKm = km.toIntOrNull() ?: 10_000, serviceMonths = months.toIntOrNull() ?: 12,
+                        osagoUntil = osago?.toString(), kaskoUntil = kasko?.toString())
                     vm.updateWork { w0 -> w0.copy(cars = if (exists) w0.cars.map { if (it.id == c.id) nc else it } else w0.cars + nc) }
                     sel = nc.id
                     carDialog = null
@@ -641,6 +768,7 @@ fun CarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         var liters by remember { mutableStateOf(e.liters?.toString().orEmpty()) }
         var note by remember { mutableStateOf(e.note) }
         var toFinance by remember { mutableStateOf(!exists) }
+        var unpaid by remember { mutableStateOf(e.unpaid) }
         AlertDialog(
             onDismissRequest = { event = null },
             title = { Text(if (exists) "Запись" else "Новая запись") },
@@ -654,7 +782,8 @@ fun CarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         OutlinedTextField(km, { km = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Пробег, км") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                     }
                     if (type == CarEventType.FUEL) OutlinedTextField(liters, { liters = it }, label = { Text("Литров") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                    OutlinedTextField(note, { note = it }, label = { Text("Комментарий") }, singleLine = true)
+                    OutlinedTextField(note, { note = it }, label = { Text(if (type == CarEventType.FUEL) "АЗС (Лукойл, Газпром…)" else "Комментарий") }, singleLine = true)
+                    if (type == CarEventType.FINE) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(unpaid, { unpaid = it }); Text("Ещё не оплачен — напомнить о скидке 50%") }
                     OutlinedButton(onClick = { pickDate(ctx, date) { date = it } }) { Text(Fmt.date(date)) }
                     if (!exists && vm.isEnabled(Tab.FINANCE)) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(toFinance, { toFinance = it }); Text("Записать расход в «Финансы»") }
                     if (exists) TextButton(onClick = { vm.updateWork { w0 -> w0.copy(carEvents = w0.carEvents.filter { it.id != e.id }) }; event = null }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
@@ -663,7 +792,7 @@ fun CarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             confirmButton = {
                 TextButton(onClick = {
                     val ne = e.copy(type = type, date = date.toString(), km = km.toIntOrNull(), cost = BankImport.parseAmount(cost) ?: 0,
-                        liters = liters.replace(',', '.').toDoubleOrNull(), note = note.trim())
+                        liters = liters.replace(',', '.').toDoubleOrNull(), note = note.trim(), unpaid = type == CarEventType.FINE && unpaid)
                     vm.updateWork { w0 ->
                         var out = w0.copy(carEvents = if (exists) w0.carEvents.map { if (it.id == e.id) ne else it } else w0.carEvents + ne)
                         if (toFinance && !exists && ne.cost > 0) {
@@ -700,6 +829,34 @@ fun HomeUtilTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
         }
+        if (w.meters.isNotEmpty()) item {
+            val hctx = LocalContext.current
+            val sp = remember { hctx.getSharedPreferences("home_util", android.content.Context.MODE_PRIVATE) }
+            var addr by remember { mutableStateOf(sp.getString("addr", "").orEmpty()) }
+            var account by remember { mutableStateOf(sp.getString("acc", "").orEmpty()) }
+            var open by remember { mutableStateOf(false) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    if (addr.isBlank()) { open = true; return@Button }
+                    val lines = w.meters.mapNotNull { m ->
+                        w.meterReadings.filter { it.meterId == m.id }.maxByOrNull { it.date }?.let { r ->
+                            "${m.name}" + (if (m.serial.isNotBlank()) " (№ ${m.serial})" else "") + ": " + "%.3f".format(r.value).trimEnd('0').trimEnd(',', '.') + " ${m.unit}"
+                        }
+                    }
+                    val text = "Показания счётчиков на ${Fmt.date(vm.today)}\nАдрес: $addr" + (if (account.isNotBlank()) "\nЛицевой счёт: $account" else "") + "\n\n" + lines.joinToString("\n")
+                    hctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "Показания счётчиков, $addr").putExtra(Intent.EXTRA_TEXT, text), "Отправить в УК"))
+                }) { Text("📤 Отправить показания в УК") }
+                TextButton(onClick = { open = true }) { Text("Адрес") }
+            }
+            if (open) AlertDialog(
+                onDismissRequest = { open = false }, title = { Text("Для письма в УК") },
+                text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(addr, { addr = it }, label = { Text("Адрес, квартира") }, singleLine = true)
+                    OutlinedTextField(account, { account = it }, label = { Text("Лицевой счёт (необязательно)") }, singleLine = true)
+                } },
+                confirmButton = { TextButton(onClick = { sp.edit().putString("addr", addr.trim()).putString("acc", account.trim()).apply(); open = false }) { Text("Сохранить") } },
+            )
+        }
         items(w.meters, key = { it.id }) { m ->
             val rs = w.meterReadings.filter { it.meterId == m.id }.sortedByDescending { it.date }
             val use = Meters.lastUse(w.meterReadings, m.id)
@@ -718,6 +875,11 @@ fun HomeUtilTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     }
                     val thisMonth = rs.firstOrNull()?.let { YearMonth.from(LocalDate.parse(it.date)) == YearMonth.from(vm.today) } == true
                     if (!thisMonth && vm.today.dayOfMonth >= 15) Text("Пора передать показания за ${Fmt.monthName(vm.today.monthValue).lowercase()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    m.verifyUntil?.let { LocalDate.parse(it) }?.let { d ->
+                        val left = java.time.temporal.ChronoUnit.DAYS.between(vm.today, d)
+                        Text("🔍 Поверка до ${Fmt.date(d)}" + if (left in 0..60) " — осталось $left дн." else if (left < 0) " — просрочена" else "",
+                            style = MaterialTheme.typography.bodySmall, color = if (left <= 60) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -725,6 +887,9 @@ fun HomeUtilTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     reading?.let { m ->
         var v by remember { mutableStateOf("") }
         var tariff by remember { mutableStateOf(if (m.tariff > 0) (m.tariff / 100.0).toString() else "") }
+        var serial by remember { mutableStateOf(m.serial) }
+        var verify by remember { mutableStateOf(m.verifyUntil?.let { LocalDate.parse(it) }) }
+        val mctx = LocalContext.current
         AlertDialog(
             onDismissRequest = { reading = null },
             title = { Text("${m.emoji} ${m.name}") },
@@ -732,6 +897,8 @@ fun HomeUtilTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(v, { v = it }, label = { Text("Показание, ${m.unit}") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                     OutlinedTextField(tariff, { tariff = it }, label = { Text("Тариф, ₽ за ${m.unit}") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                    OutlinedTextField(serial, { serial = it }, label = { Text("Номер счётчика") }, singleLine = true)
+                    OutlinedButton(onClick = { pickDate(mctx, verify ?: vm.today.plusYears(4)) { verify = it } }) { Text("Поверка до: " + (verify?.let { Fmt.date(it) } ?: "не указано")) }
                     w.meterReadings.filter { it.meterId == m.id }.sortedByDescending { it.date }.take(6).forEach { r ->
                         Text("${Fmt.date(LocalDate.parse(r.date))} — ${r.value}", style = MaterialTheme.typography.bodySmall)
                     }
@@ -746,7 +913,7 @@ fun HomeUtilTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     val t = BankImport.parseAmount(tariff) ?: 0
                     vm.updateWork { w0 ->
                         w0.copy(
-                            meters = w0.meters.map { if (it.id == m.id) it.copy(tariff = t) else it },
+                            meters = w0.meters.map { if (it.id == m.id) it.copy(tariff = t, serial = serial.trim(), verifyUntil = verify?.toString()) else it },
                             meterReadings = if (value != null) w0.meterReadings.filter { !(it.meterId == m.id && it.date == vm.today.toString()) } + MeterReading(m.id, vm.today.toString(), value) else w0.meterReadings,
                         )
                     }
@@ -782,6 +949,7 @@ fun PetsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     val w = vm.work
     var petDialog by remember { mutableStateOf<Pet?>(null) }
     var event by remember { mutableStateOf<PetEvent?>(null) }
+    var foodFor by remember { mutableStateOf<Pet?>(null) }
     val upcoming = Pets.upcoming(w.petEvents, vm.today, 30)
     ModuleScaffold("Питомцы", snackbar, fab = "Питомец" to { petDialog = Pet(newId(), "") }) {
         if (w.pets.isEmpty()) item { Hint("Добавьте питомца — напомню о прививках, обработке от паразитов и визитах к ветеринару.") }
@@ -817,15 +985,54 @@ fun PetsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                    // Вес на графике
+                    val weights = w.petEvents.filter { it.petId == p.id && it.weight != null }.sortedBy { it.date }
+                    if (weights.size >= 2) {
+                        val c = moduleColor(Tab.PETS)
+                        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(60.dp)) {
+                            val ws = weights.map { it.weight!! }
+                            val lo = ws.min() - 0.5; val hi = ws.max() + 0.5
+                            val step = size.width / (ws.size - 1)
+                            for (k in 1 until ws.size) drawLine(c, androidx.compose.ui.geometry.Offset(step * (k - 1), (size.height * (1 - (ws[k - 1] - lo) / (hi - lo))).toFloat()),
+                                androidx.compose.ui.geometry.Offset(step * k, (size.height * (1 - (ws[k] - lo) / (hi - lo))).toFloat()), 5f)
+                        }
+                        Text("Вес: " + weights.takeLast(4).joinToString(" → ") { "%.1f".format(it.weight) } + " кг", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    p.foodDaysLeft(vm.today)?.let { left ->
+                        Text("🥫 Корма хватит на ${maxOf(0, left)} дн." + if (left <= 5) " — пора купить" else "", style = MaterialTheme.typography.bodySmall,
+                            color = if (left <= 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    }
                     ev.take(4).forEach { e ->
                         Text("${e.type.emoji} ${Fmt.dateNoYear(LocalDate.parse(e.date))} · ${e.type.title}" + (e.note.takeIf { it.isNotBlank() }?.let { ": $it" } ?: "") +
                             (e.next?.let { " → след. ${Fmt.dateNoYear(LocalDate.parse(it))}" } ?: ""),
                             Modifier.clickable { event = e }, style = MaterialTheme.typography.bodySmall)
                     }
-                    OutlinedButton(onClick = { event = PetEvent(newId(), p.id, PetEventType.VACCINE, vm.today.toString()) }) { Text("+ Событие") }
+                    val pctx = LocalContext.current
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(onClick = { event = PetEvent(newId(), p.id, PetEventType.VACCINE, vm.today.toString()) }) { Text("+ Событие") }
+                        OutlinedButton(onClick = { foodFor = p }) { Text("🥫") }
+                        OutlinedButton(onClick = { runCatching { petPassport(pctx, w, p) }.onFailure { vm.message = "Не удалось собрать PDF" } }) { Text("📄 PDF") }
+                    }
                 }
             }
         }
+    }
+    foodFor?.let { p ->
+        var bag by remember { mutableStateOf(p.foodBagKg?.toString() ?: "") }
+        var per by remember { mutableStateOf(p.foodPerDayG?.toString() ?: "") }
+        AlertDialog(
+            onDismissRequest = { foodFor = null }, title = { Text("Корм: ${p.name}") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Hint("Укажите вес упаковки и сколько съедает в день — напомню купить заранее.")
+                OutlinedTextField(bag, { bag = it.filter { c -> c.isDigit() || c == ',' || c == '.' } }, label = { Text("Упаковка, кг") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                OutlinedTextField(per, { per = it.filter(Char::isDigit) }, label = { Text("В день, г") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            } },
+            confirmButton = { TextButton(onClick = {
+                vm.updateWork { w0 -> w0.copy(pets = w0.pets.map { if (it.id == p.id) it.copy(foodBagKg = bag.replace(',', '.').toDoubleOrNull(), foodPerDayG = per.toIntOrNull(), foodOpened = vm.today.toString()) else it }) }
+                vm.message = "Открыта новая упаковка — посчитаю, когда закончится"; foodFor = null
+            }) { Text("Открыл новую упаковку") } },
+            dismissButton = { TextButton(onClick = { foodFor = null }) { Text("Отмена") } },
+        )
     }
     petDialog?.let { p ->
         val ctx = LocalContext.current
@@ -900,4 +1107,55 @@ fun PetsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             dismissButton = { TextButton(onClick = { event = null }) { Text("Отмена") } },
         )
     }
+}
+
+
+@Composable
+private fun JournalPhoto(path: String, modifier: Modifier, onDelete: () -> Unit) {
+    val ctx = LocalContext.current
+    var ask by remember { mutableStateOf(false) }
+    val bmp by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, path) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { android.graphics.BitmapFactory.decodeFile(java.io.File(ctx.filesDir, path).path, android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }) }.getOrNull()
+        }
+    }
+    Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant).combinedClickable(onClick = {
+        val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", java.io.File(ctx.filesDir, path))
+        runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "image/jpeg").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
+    }, onLongClick = { ask = true })) {
+        bmp?.let { androidx.compose.foundation.Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop) }
+    }
+    if (ask) AlertDialog(onDismissRequest = { ask = false }, title = { Text("Удалить фото?") },
+        confirmButton = { TextButton(onClick = { ask = false; onDelete() }) { Text("Удалить") } },
+        dismissButton = { TextButton(onClick = { ask = false }) { Text("Отмена") } })
+}
+
+
+/** Паспорт питомца в PDF: данные, прививки и обработки. */
+private fun petPassport(ctx: android.content.Context, w: app.calstats.work.Workspace, p: Pet) {
+    val doc = android.graphics.pdf.PdfDocument()
+    val page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create())
+    val c = page.canvas
+    val t = android.graphics.Paint().apply { textSize = 20f; isFakeBoldText = true; color = 0xFF2B2F35.toInt() }
+    val h = android.graphics.Paint().apply { textSize = 13f; isFakeBoldText = true; color = 0xFF2B2F35.toInt() }
+    val b = android.graphics.Paint().apply { textSize = 11f; color = 0xFF33373D.toInt() }
+    var y = 60f
+    fun line(s: String, pt: android.graphics.Paint = b, gap: Float = 16f) { if (y < 800) { c.drawText(s, 40f, y, pt); y += gap } }
+    line("${p.kind} ${p.name}", t, 28f)
+    line(listOfNotNull(p.breed.takeIf { it.isNotBlank() }, p.birth?.let { "родился ${Fmt.date(LocalDate.parse(it))}" }, p.chip.takeIf { it.isNotBlank() }?.let { "чип $it" }).joinToString(" · "))
+    w.petEvents.filter { it.petId == p.id && it.weight != null }.maxByOrNull { it.date }?.let { line("Вес: %.1f кг (${Fmt.date(LocalDate.parse(it.date))})".format(it.weight)) }
+    PetEventType.entries.forEach { type ->
+        val l = w.petEvents.filter { it.petId == p.id && it.type == type }.sortedByDescending { it.date }
+        if (l.isEmpty() || type == PetEventType.WEIGHT) return@forEach
+        y += 8f; line(type.title, h, 18f)
+        l.take(12).forEach { e -> line("  ${Fmt.date(LocalDate.parse(e.date))}" + (if (e.note.isNotBlank()) " — ${e.note}" else "") + (e.next?.let { "  · следующая ${Fmt.date(LocalDate.parse(it))}" } ?: "")) }
+    }
+    y += 10f; line("Подготовлено в «Зелёном ритме»", android.graphics.Paint(b).apply { color = 0xFF7A808B.toInt() })
+    doc.finishPage(page)
+    val dir = java.io.File(ctx.cacheDir, "reports").apply { mkdirs() }
+    val f = java.io.File(dir, "pasport-${p.name}.pdf")
+    f.outputStream().use { doc.writeTo(it) }
+    doc.close()
+    val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
+    ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("application/pdf").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Паспорт питомца"))
 }

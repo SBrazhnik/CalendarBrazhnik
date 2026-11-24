@@ -83,6 +83,8 @@ data class LifeGoal(
     val target: Double? = null,
     /** Стартовое значение (вес, долг) на момент привязки. */
     val start: Double? = null,
+    /** Разборы по месяцам: «2026-11» → что сделано и что дальше. */
+    val reviews: Map<String, String> = emptyMap(),
 ) {
     val progress: Float get() = when {
         done -> 1f
@@ -176,6 +178,10 @@ data class JournalEntry(
     val gratitude: List<String> = emptyList(),
     val best: String = "",
     val updated: Long = System.currentTimeMillis(),
+    /** Фото дня (пути внутри приложения). */
+    val photos: List<String> = emptyList(),
+    /** Метки дня: работа, семья, спорт… */
+    val tags: List<String> = emptyList(),
 )
 
 object Journal {
@@ -183,7 +189,11 @@ object Journal {
         "Что сегодня получилось лучше всего?", "Чему я сегодня научился?", "Что бы я сделал иначе?",
         "Кто сегодня меня порадовал?", "Что меня беспокоит и что я могу с этим сделать?",
         "Какой маленький шаг к цели я сделал?", "За что я могу себя похвалить?",
+        "Что сегодня дало мне энергию, а что забрало?", "Какой момент хочется запомнить?",
+        "Что я откладываю и почему?", "Какой разговор сегодня был важным?", "Что я сделал для здоровья?",
+        "Чему я сегодня улыбнулся?", "Какое решение я принял и доволен ли им?", "Что бы я сказал себе год назад?",
     )
+    val TAGS = listOf("работа", "семья", "друзья", "спорт", "отдых", "здоровье", "учёба", "путешествие", "творчество", "дом")
 
     fun prompt(d: LocalDate) = PROMPTS[(d.dayOfYear) % PROMPTS.size]
 
@@ -198,7 +208,36 @@ object Journal {
 
 // ---------- Авто ----------
 @Serializable
-data class Car(val id: String, val name: String, val plate: String = "", val year: Int? = null, val serviceKm: Int = 10_000, val serviceMonths: Int = 12)
+data class Car(
+    val id: String, val name: String, val plate: String = "", val year: Int? = null, val serviceKm: Int = 10_000, val serviceMonths: Int = 12,
+    /** Срок ОСАГО и КАСКО. */
+    val osagoUntil: String? = null, val kaskoUntil: String? = null,
+)
+
+/** Сезонные подсказки и штрафы. */
+object CarHints {
+    /** Пора менять шины? null — не сезон или уже меняли. */
+    fun tires(events: List<CarEvent>, carId: String, today: LocalDate): String? {
+        val recent = events.any { it.carId == carId && it.type == CarEventType.TIRES && !LocalDate.parse(it.date).isBefore(today.minusDays(60)) }
+        if (recent) return null
+        val md = today.monthValue * 100 + today.dayOfMonth
+        return when (md) {
+            in 1001..1115 -> "🛞 Пора на зимнюю резину (средняя температура ниже +5°)"
+            in 325..430 -> "🛞 Пора на летнюю резину (до 1 июня шипы разрешены, но лучше раньше)"
+            else -> null
+        }
+    }
+
+    /** Неоплаченный штраф: скидка 50% действует 20 дней с даты постановления. */
+    fun discountUntil(e: CarEvent): LocalDate = LocalDate.parse(e.date).plusDays(20)
+
+    /** Средняя цена литра по АЗС (по комментарию к заправке). */
+    fun stations(events: List<CarEvent>, carId: String): List<Pair<String, Double>> =
+        events.filter { it.carId == carId && it.type == CarEventType.FUEL && (it.liters ?: 0.0) > 0 && it.cost > 0 && it.note.isNotBlank() }
+            .groupBy { it.note.trim().split(' ').first().replaceFirstChar { c -> c.uppercase() } }
+            .mapValues { (_, l) -> l.sumOf { it.cost } / 100.0 / l.sumOf { it.liters!! } }
+            .entries.sortedBy { it.value }.map { it.key to it.value }
+}
 
 enum class CarEventType(val title: String, val emoji: String) {
     FUEL("Заправка", "⛽"), SERVICE("ТО", "🔧"), REPAIR("Ремонт", "🛠"), TIRES("Шины", "🛞"), WASH("Мойка", "🧽"),
@@ -215,6 +254,8 @@ data class CarEvent(
     val cost: Long = 0,
     val liters: Double? = null,
     val note: String = "",
+    /** Штраф ещё не оплачен. */
+    val unpaid: Boolean = false,
 )
 
 object CarMath {
@@ -245,7 +286,7 @@ object CarMath {
 
 // ---------- Дом ----------
 @Serializable
-data class Meter(val id: String, val name: String, val emoji: String = "💧", val unit: String = "м³", val tariff: Long = 0)
+data class Meter(val id: String, val name: String, val emoji: String = "💧", val unit: String = "м³", val tariff: Long = 0, val serial: String = "", val verifyUntil: String? = null)
 
 @Serializable
 data class MeterReading(val meterId: String, val date: String, val value: Double)
@@ -266,7 +307,7 @@ object Meters {
 
 // ---------- Питомцы ----------
 @Serializable
-data class Pet(val id: String, val name: String, val kind: String = "🐶", val breed: String = "", val birth: String? = null, val chip: String = "")
+data class Pet(val id: String, val name: String, val kind: String = "🐶", val breed: String = "", val birth: String? = null, val chip: String = "", val foodBagKg: Double? = null, val foodPerDayG: Int? = null, val foodOpened: String? = null)
 
 enum class PetEventType(val title: String, val emoji: String, val repeatMonths: Int?) {
     VACCINE("Прививка", "💉", 12), PARASITES("От паразитов", "🪲", 3), VET("Ветеринар", "🩺", null),
@@ -283,6 +324,13 @@ data class PetEvent(
     val weight: Double? = null,
     val note: String = "",
 )
+
+/** Корм: на сколько дней ещё хватит. */
+fun Pet.foodDaysLeft(today: LocalDate): Long? {
+    val bag = foodBagKg ?: return null; val per = foodPerDayG ?: return null; val op = foodOpened ?: return null
+    if (per <= 0) return null
+    return (bag * 1000 / per).toLong() - java.time.temporal.ChronoUnit.DAYS.between(LocalDate.parse(op), today)
+}
 
 object Pets {
     fun upcoming(events: List<PetEvent>, today: LocalDate, days: Long = 14): List<PetEvent> = events

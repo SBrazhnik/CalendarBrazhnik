@@ -4,4 +4,5 @@
     <cache-path name="reports" path="reports/" />
     <files-path name="notes" path="notes/" />
     <files-path name="receipts" path="receipts/" />
+    <files-path name="journal" path="journal/" />
 </paths>
