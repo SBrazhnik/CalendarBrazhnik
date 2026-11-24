@@ -116,7 +116,7 @@ object SearchIndex {
             out += Hit("Авто", e.type.emoji, e.type.title + if (e.note.isNotBlank()) " · ${e.note}" else "", Fmt.date(LocalDate.parse(e.date)) + " · " + SplitMath.money(e.cost), ep(d(e.date))) { go(Tab.CAR) }
         }
         if (vm.isEnabled(Tab.PETS)) {
-            w.pets.filter { m(it.name, it.breed, it.chip) }.forEach { p -> out += Hit("Питомцы", p.emoji, p.name, p.breed, 0) { go(Tab.PETS) } }
+            w.pets.filter { m(it.name, it.breed, it.chip) }.forEach { p -> out += Hit("Питомцы", "🐾", p.name, p.breed, 0) { go(Tab.PETS) } }
             w.petEvents.filter { m(it.note, it.type.title) }.forEach { e -> out += Hit("Питомцы", e.type.emoji, e.type.title + " · " + e.note, Fmt.date(LocalDate.parse(e.date)), ep(d(e.date))) { go(Tab.PETS) } }
         }
         if (vm.isEnabled(Tab.WISHES)) w.wishes.filter { m(it.title, it.note, it.link) }.forEach { x ->
