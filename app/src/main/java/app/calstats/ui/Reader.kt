@@ -96,6 +96,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -134,7 +135,7 @@ fun ReaderScreen(vm: MainViewModel, bookId: String) {
     val prefs = remember { ReaderPrefs(ctx) }
     val th = THEMES[prefs.theme.coerceIn(0, THEMES.lastIndex)]
     val paras by produceState<List<Para>?>(null, book.file) {
-        value = withContext(Dispatchers.IO) { runCatching { EbookParser.load(File(ctx.filesDir, book.file), book.format, ctx.cacheDir) }.getOrElse { emptyList() } }
+        value = withContext(Dispatchers.IO) { runCatching { EbookParser.load(File(ctx.filesDir, book.file), book.format, BookPrep.dir(ctx)) }.getOrElse { emptyList() } }
     }
     var controls by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
@@ -176,6 +177,7 @@ fun ReaderScreen(vm: MainViewModel, bookId: String) {
         val textPx = with(density) { prefs.size.sp.toPx() }
         val style = remember(pageW, pageH, textPx, prefs.line, prefs.serif, prefs.justify) { PageStyle(pageW, pageH, textPx, prefs.line, prefs.serif, prefs.justify) }
         val renderer = remember(style) { PageRenderer(style) }
+        LaunchedEffect(style) { BookPrep.rememberStyle(ctx, style) }
         val list = paras
         val pages = remember(style, list) { mutableStateListOf<List<Slice>>() }
         var done by remember(style, list) { mutableStateOf(false) }
@@ -186,7 +188,7 @@ fun ReaderScreen(vm: MainViewModel, bookId: String) {
         LaunchedEffect(style, list) {
             val ps = list ?: return@LaunchedEffect
             if (ps.isEmpty()) { done = true; return@LaunchedEffect }
-            val f = Paginator.cacheFile(ctx.cacheDir, bookId, style)
+            val f = Paginator.cacheFile(BookPrep.dir(ctx), bookId, style)
             val cached = withContext(Dispatchers.IO) { if (f.isFile) Paginator.load(f) else null }
             if (!cached.isNullOrEmpty()) { pages.addAll(cached); done = true; return@LaunchedEffect }
             val all = withContext(Dispatchers.Default) { Paginator.paginate(ps, style) { batch -> pages.addAll(batch) } }
@@ -435,7 +437,12 @@ fun FreeBooksDialog(vm: MainViewModel, onDismiss: () -> Unit) {
                                     val dl = withContext(Dispatchers.IO) { runCatching { Net.download(b.url, f) } }
                                     busy = null
                                     if (dl.isFailure) { f.delete(); fail = "Не удалось скачать: " + Net.why(dl.exceptionOrNull()); return@launch }
-                                    val (t, a) = withContext(Dispatchers.IO) { EbookParser.meta(f, b.fmt) }
+                                    busy = "Готовлю книгу к чтению…"
+                                    val (t, a) = withContext(Dispatchers.IO) {
+                                        runCatching { BookPrep.prepare(ctx, id, f, b.fmt) }
+                                        EbookParser.meta(f, b.fmt)
+                                    }
+                                    busy = null
                                     val book = Book(id, b.title.ifBlank { t }, b.authors.ifBlank { a }, file = "books/$id.${b.fmt}", format = b.fmt, status = BookStatus.ACTIVE,
                                         started = vm.today.toString(), source = "${b.source}: ${b.id}")
                                     vm.updateWork { it.copy(readBooks = it.readBooks + book) }
@@ -452,22 +459,35 @@ fun FreeBooksDialog(vm: MainViewModel, onDismiss: () -> Unit) {
     )
 }
 
-/** Добавить свою электронную книгу с телефона (EPUB, FB2, FB2.ZIP, TXT). */
+/** Добавить свою электронную книгу с телефона (EPUB, FB2, FB2.ZIP, TXT): копия хранится в приложении и сразу готовится к чтению. */
 fun importEbook(ctx: Context, vm: MainViewModel, uri: android.net.Uri, mime: String? = null) {
-    val r = ctx.contentResolver
-    var name = "книга"
-    runCatching { r.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) name = c.getString(0) ?: name } }
-    if (name == "книга") uri.lastPathSegment?.let { name = it.substringAfterLast('/') }
-    val lower = name.lowercase()
-    val fmt = when { lower.endsWith(".fb2.zip") -> "fb2.zip"; lower.endsWith(".fb2") -> "fb2"; lower.endsWith(".epub") -> "epub"; lower.endsWith(".txt") -> "txt"
-        mime == "application/epub+zip" -> "epub"; mime?.contains("fictionbook") == true -> "fb2"; mime == "text/plain" -> "txt"; else -> null }
-    if (fmt == null) { vm.message = "Поддерживаются EPUB, FB2 и TXT"; return }
-    val id = newId()
-    val f = File(ctx.filesDir, "books/$id.$fmt").apply { parentFile?.mkdirs() }
-    runCatching { r.openInputStream(uri)?.use { i -> f.outputStream().use { i.copyTo(it) } } }.onFailure { vm.message = "Не удалось открыть файл"; return }
-    val (t, a) = EbookParser.meta(f, fmt)
-    val book = Book(id, t.ifBlank { name.substringBeforeLast('.').removeSuffix(".fb2") }, a, file = "books/$id.$fmt", format = fmt, status = BookStatus.ACTIVE,
-        started = vm.today.toString(), source = "Файл")
-    vm.updateWork { it.copy(readBooks = it.readBooks + book) }
-    vm.push(app.calstats.Screen.Reader(id))
+    val appCtx = ctx.applicationContext
+    vm.message = "📖 Загружаю книгу…"
+    vm.viewModelScope.launch {
+        val res = withContext(Dispatchers.IO) {
+            runCatching {
+                val r = appCtx.contentResolver
+                var name = "книга"
+                runCatching { r.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) name = c.getString(0) ?: name } }
+                if (name == "книга") uri.lastPathSegment?.let { name = it.substringAfterLast('/') }
+                val lower = name.lowercase()
+                val fmt = when {
+                    lower.endsWith(".fb2.zip") -> "fb2.zip"; lower.endsWith(".fb2") -> "fb2"; lower.endsWith(".epub") -> "epub"; lower.endsWith(".txt") -> "txt"
+                    mime == "application/epub+zip" -> "epub"; mime?.contains("fictionbook") == true -> "fb2"; mime == "text/plain" -> "txt"
+                    else -> error("Поддерживаются EPUB, FB2 и TXT")
+                }
+                val id = newId()
+                val f = File(appCtx.filesDir, "books/$id.$fmt").apply { parentFile?.mkdirs() }
+                (r.openInputStream(uri) ?: error("Не удалось открыть файл")).use { i -> f.outputStream().use { i.copyTo(it) } }
+                runCatching { BookPrep.prepare(appCtx, id, f, fmt) }
+                val (t, a) = EbookParser.meta(f, fmt)
+                Book(id, t.ifBlank { name.substringBeforeLast('.').removeSuffix(".fb2") }, a, file = "books/$id.$fmt", format = fmt, status = BookStatus.ACTIVE,
+                    started = vm.today.toString(), source = "Файл")
+            }
+        }
+        res.onSuccess { book ->
+            vm.updateWork { it.copy(readBooks = it.readBooks + book) }
+            vm.push(app.calstats.Screen.Reader(book.id))
+        }.onFailure { vm.message = it.message ?: "Не удалось открыть файл" }
+    }
 }

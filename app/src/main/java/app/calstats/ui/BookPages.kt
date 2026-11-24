@@ -145,3 +145,42 @@ object Paginator {
         return ans
     }
 }
+
+/**
+ * Подготовка книги сразу после загрузки: разбор текста и раскладка по страницам
+ * сохраняются в памяти приложения (bookcache), поэтому книга открывается мгновенно.
+ */
+object BookPrep {
+    fun dir(ctx: android.content.Context) = File(ctx.filesDir, "bookcache")
+    private fun sp(ctx: android.content.Context) = ctx.getSharedPreferences("reader", android.content.Context.MODE_PRIVATE)
+
+    /** Запоминаем размер страницы и шрифт — с ними готовим следующие книги. */
+    fun rememberStyle(ctx: android.content.Context, st: PageStyle) {
+        sp(ctx).edit().putString("style", "${st.width},${st.height},${st.textPx},${st.line},${st.serif},${st.justify}").apply()
+    }
+
+    fun lastStyle(ctx: android.content.Context): PageStyle? = runCatching {
+        val p = sp(ctx).getString("style", null)!!.split(',')
+        PageStyle(p[0].toInt(), p[1].toInt(), p[2].toFloat(), p[3].toFloat(), p[4].toBoolean(), p[5].toBoolean())
+    }.getOrNull()
+
+    fun ready(ctx: android.content.Context, bookId: String): Boolean {
+        val st = lastStyle(ctx) ?: return false
+        return Paginator.cacheFile(dir(ctx), bookId, st).isFile
+    }
+
+    /** Долгая работа — вызывать в фоне. */
+    fun prepare(ctx: android.content.Context, bookId: String, file: File, format: String) {
+        val st = lastStyle(ctx)
+        if (st != null && Paginator.cacheFile(dir(ctx), bookId, st).isFile) return
+        val paras = app.calstats.work.EbookParser.load(file, format, dir(ctx))
+        if (st == null || paras.isEmpty()) return
+        Paginator.save(Paginator.cacheFile(dir(ctx), bookId, st), bookId, Paginator.paginate(paras, st) {})
+    }
+
+    /** Удалить подготовленные данные книги. */
+    fun forget(ctx: android.content.Context, bookId: String, file: File?) {
+        File(dir(ctx), "pages").listFiles { x -> x.name.startsWith(bookId + "_") }?.forEach { it.delete() }
+        if (file != null) File(dir(ctx), "books").listFiles { x -> x.name.startsWith(file.name + ".") }?.forEach { it.delete() }
+    }
+}

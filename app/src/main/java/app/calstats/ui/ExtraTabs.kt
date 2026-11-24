@@ -681,6 +681,14 @@ fun ReadingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     val openBook = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) app.calstats.ui.importEbook(ctxR, vm, uri)
     }
+    // Все загруженные книги заранее готовим к чтению — открываются мгновенно
+    androidx.compose.runtime.LaunchedEffect(vm.work.readBooks.count { it.isEbook }) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            vm.work.readBooks.filter { it.isEbook && it.status != BookStatus.DONE }.forEach { b ->
+                if (!app.calstats.ui.BookPrep.ready(ctxR, b.id)) runCatching { app.calstats.ui.BookPrep.prepare(ctxR, b.id, java.io.File(ctxR.filesDir, b.file!!), b.format) }
+            }
+        }
+    }
     // Таймер чтения: какая книга и с какого момента
     var timing by rememberSaveable { mutableStateOf<String?>(null) }
     var timingStart by rememberSaveable { mutableStateOf(0L) }

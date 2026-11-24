@@ -9,6 +9,9 @@
         <!-- Токен Telegram-бота и копии файла данных в облако не уходят -->
         <exclude domain="sharedpref" path="telegram.xml" />
         <exclude domain="file" path="work.json.tmp" />
+        <!-- Книги большие (лимит облака Google — 25 МБ): они в zip-копии приложения -->
+        <exclude domain="file" path="books/" />
+        <exclude domain="file" path="bookcache/" />
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" path="." />
