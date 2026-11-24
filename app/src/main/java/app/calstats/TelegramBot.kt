@@ -69,10 +69,16 @@ class TelegramBot(ctx: Context) {
         true
     }
 
-    /** Меню команд у кнопки «Меню» в Telegram. */
+    /** Диагностика: последняя ошибка и время последнего ответа. */
+    fun lastError(): String? = prefs.getString("err", null)
+    fun lastOk(): Long = prefs.getLong("ok_at", 0)
+    private fun err(e: Throwable?) { if (e == null) prefs.edit().remove("err").putLong("ok_at", System.currentTimeMillis()).apply() else prefs.edit().putString("err", e.message ?: e.javaClass.simpleName).apply() }
+
+    /** Меню команд у кнопки «Меню» в Telegram. Заодно снимаем вебхук: с ним Telegram не отдаёт сообщения приложению. */
     suspend fun setupMenu() = withContext(Dispatchers.IO) {
         val st = state()
         if (!st.hasToken) return@withContext
+        runCatching { post(st.token, "deleteWebhook", "drop_pending_updates=false") }.onFailure { err(it) }
         val cmds = BotBrain.COMMANDS.joinToString(",", "[", "]") { (c, d) -> """{"command":"$c","description":"$d"}""" }
         runCatching { post(st.token, "setMyCommands", "commands=" + URLEncoder.encode(cmds, "UTF-8")) }
     }
@@ -81,7 +87,12 @@ class TelegramBot(ctx: Context) {
     suspend fun poll(timeout: Int): List<String> = withContext(Dispatchers.IO) {
         val st = state()
         if (!st.connected) return@withContext emptyList()
-        val ups = updates(st.token, prefs.getLong("offset", 0), timeout)
+        val ups = try { updates(st.token, prefs.getLong("offset", 0), timeout).also { err(null) } } catch (e: Exception) {
+            err(e)
+            // 409: включён вебхук или бот опрашивает другое устройство/программа
+            if (e.message?.contains("409") == true) runCatching { post(st.token, "deleteWebhook", "drop_pending_updates=false") }
+            throw e
+        }
         if (ups.isEmpty()) return@withContext emptyList()
         prefs.edit().putLong("offset", ups.last().id + 1).apply()
         ups.filter { it.chatId == st.chatId && it.text.isNotBlank() }.map { it.text }
@@ -101,11 +112,16 @@ class TelegramBot(ctx: Context) {
         val st = state()
         if (!st.connected) return@withContext false
         runCatching {
-            var body = "chat_id=${st.chatId}&text=" + URLEncoder.encode(text.take(4000), "UTF-8") + "&disable_web_page_preview=true"
-            if (keyboard) body += "&reply_markup=" + URLEncoder.encode(BotBrain.KEYBOARD, "UTF-8")
-            post(st.token, "sendMessage", body)
+            val body = "chat_id=${st.chatId}&text=" + URLEncoder.encode(text.take(4000), "UTF-8") + "&disable_web_page_preview=true"
+            try {
+                post(st.token, "sendMessage", if (keyboard) body + "&reply_markup=" + URLEncoder.encode(BotBrain.KEYBOARD, "UTF-8") else body)
+            } catch (e: Exception) {
+                err(e)
+                if (keyboard) post(st.token, "sendMessage", body) else throw e // без кнопок, но ответ дойдёт
+            }
+            err(null)
             true
-        }.getOrDefault(false)
+        }.onFailure { err(it) }.getOrDefault(false)
     }
 
     /** «Печатает…» — пока бот готовит ответ. */
@@ -136,7 +152,7 @@ class TelegramBot(ctx: Context) {
             c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val ok = c.responseCode in 200..299
             val txt = (if (ok) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (!ok) error("Telegram: ${c.responseCode}")
+            if (!ok) error("Telegram ${c.responseCode}: " + Regex("\"description\":\"([^\"]*)").find(txt)?.groupValues?.get(1).orEmpty())
             return Json.parseToJsonElement(txt).jsonObject
         } finally { c.disconnect() }
     }
@@ -148,7 +164,7 @@ class TelegramBot(ctx: Context) {
         try {
             val ok = c.responseCode in 200..299
             val body = (if (ok) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (!ok) error(if (c.responseCode == 401 || c.responseCode == 404) "Неверный токен" else "Telegram недоступен (${c.responseCode})")
+            if (!ok) error(if (c.responseCode == 401 || c.responseCode == 404) "Неверный токен" else "Telegram ${c.responseCode}: " + Regex("\"description\":\"([^\"]*)").find(body)?.groupValues?.get(1).orEmpty())
             return Json.parseToJsonElement(body).jsonObject
         } finally {
             c.disconnect()

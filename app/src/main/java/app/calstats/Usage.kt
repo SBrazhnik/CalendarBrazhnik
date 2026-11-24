@@ -59,6 +59,7 @@ object Changelog {
     data class Entry(val build: Int, val date: String, val title: String, val items: List<String>)
 
     val entries = listOf(
+        Entry(67, "24.11.2026", "Telegram-бот: диагностика", listOf("В карточке Telegram видно состояние бота и последнюю ошибку", "Бот снимает вебхук, если он мешал получать сообщения", "Если кнопки не отправились — ответ всё равно придёт")),
         Entry(
             65, "24.11.2026", "Telegram-бот: мгновенные ответы, меню, вопросы",
             listOf(

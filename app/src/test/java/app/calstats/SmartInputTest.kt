@@ -68,3 +68,11 @@ class InsightsTest {
         org.junit.Assert.assertTrue(ins.joinToString { it.text }, ins.any { it.text.contains("настроение выше") })
     }
 }
+
+class BotTest {
+    @Test fun keyboardJson() {
+        val k = kotlinx.serialization.json.Json.parseToJsonElement(BotBrain.KEYBOARD)
+        org.junit.Assert.assertTrue(k.toString().contains("keyboard"))
+        BotBrain.COMMANDS.forEach { (c, _) -> org.junit.Assert.assertTrue(c, Regex("^[a-z0-9_]{1,32}$").matches(c)) }
+    }
+}

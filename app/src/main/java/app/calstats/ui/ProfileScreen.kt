@@ -364,6 +364,18 @@ fun TelegramCard(vm: MainViewModel) {
                     }
                 }
                 if (!live) Text("Без этого бот отвечает, только когда вы открываете приложение.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                // Диагностика — чтобы было видно, что не так
+                var tick by remember { mutableStateOf(0) }
+                LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(2000); tick++ } }
+                val err = remember(tick) { vm.telegram.lastError() }
+                val okAt = remember(tick) { vm.telegram.lastOk() }
+                Text(
+                    "Состояние: " + (if (live) (if (app.calstats.TelegramService.running) "служба работает" else "служба не запущена") else "ответы при открытии приложения") +
+                        (if (okAt > 0) " · связь с Telegram ${java.time.Instant.ofEpochMilli(okAt).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))}" else "") +
+                        (err?.let { "\n⚠ Ошибка: $it" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (err != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 SwitchRow("Утренняя сводка", "Каждый день в 10:00: задачи, сроки, списания", st.daily) { vm.telegram.setFlag("daily", it); vm.refreshTelegram() }
                 SwitchRow("Напоминания", "Документы, подписки, пробные периоды", st.reminders) { vm.telegram.setFlag("reminders", it); vm.refreshTelegram() }
                 SwitchRow("Новые версии", "Сообщить о выходе обновления", st.updates) { vm.telegram.setFlag("updates", it); vm.refreshTelegram() }
