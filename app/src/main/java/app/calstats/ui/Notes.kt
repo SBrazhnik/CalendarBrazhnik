@@ -713,7 +713,8 @@ fun NoteEditScreen(vm: MainViewModel, id: String, snackbar: SnackbarHostState) {
 
     val note = vm.work.notes.firstOrNull { it.id == id } ?: original
     Scaffold(
-        containerColor = if (color == null) MaterialTheme.colorScheme.background else noteBg(color),
+        // Внутри заметки фон обычный — цвет виден только на карточке в списке и полоской сверху
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
@@ -772,6 +773,7 @@ fun NoteEditScreen(vm: MainViewModel, id: String, snackbar: SnackbarHostState) {
                 Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                color?.let { c -> Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color(c))) }
                 if (RecorderService.noteId == id) RecordingBanner { RecorderService.stop(ctx) }
                 Box {
                     if (title.isEmpty()) Text("Заголовок", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
