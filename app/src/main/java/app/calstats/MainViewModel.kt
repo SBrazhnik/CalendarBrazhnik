@@ -1048,6 +1048,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val cur = work
             runCatching { TasksWidget.refresh(getApplication()) }
             runCatching { app.calstats.widget.TodayWidget.refresh(getApplication()) }
+            runCatching { app.calstats.widget.CardsWidget.refresh(getApplication()) }
             runCatching { Notify.scheduleHabits(getApplication(), cur) }
             runCatching { Notify.scheduleMeds(getApplication(), cur) }
             runCatching { Notify.scheduleNotes(getApplication(), cur) }

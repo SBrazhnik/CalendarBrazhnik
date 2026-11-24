@@ -5,6 +5,8 @@ package app.calstats.ui
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import app.calstats.work.ShopPrice
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -161,6 +163,7 @@ fun ShoppingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     val cur = lists.firstOrNull { it.id == sel } ?: lists.firstOrNull()
     var input by remember { mutableStateOf("") }
     var newList by remember { mutableStateOf(false) }
+    var priceFor by remember { mutableStateOf<ShopItem?>(null) }
     if (lists.isEmpty()) {
         androidx.compose.runtime.LaunchedEffect(Unit) {
             vm.updateWork { it.copy(shopLists = listOf(ShopList(newId(), "Продукты", "🛒"), ShopList(newId(), "Аптека", "💊"), ShopList(newId(), "Для дома", "🧴"))) }
@@ -201,12 +204,26 @@ fun ShoppingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     trailingIcon = { if (input.isNotBlank()) IconButton(onClick = { add() }) { Icon(Icons.Filled.Add, "Добавить") } },
                 )
             }
-            val items = w.shopItems.filter { it.listId == cur.id }.sortedWith(compareBy({ it.done }, { -it.created }))
-            if (items.isEmpty()) item { Hint("Пишите через запятую — каждая позиция добавится отдельно. Чем поделились из другого приложения, можно добавить сюда.") }
-            items(items, key = { it.id }) { i ->
+            val all = w.shopItems.filter { it.listId == cur.id }
+            // Не купленное — по отделам магазина в порядке обхода, купленное — внизу
+            val open = all.filter { !it.done }.sortedWith(compareBy({ Shop.aisleOrder(Shop.aisle(it.name)) }, { -it.created }))
+            val items = open + all.filter { it.done }.sortedByDescending { it.created }
+            val byAisle = open.size >= 5
+            if (all.isEmpty()) item { Hint("Пишите через запятую — каждая позиция добавится отдельно. Список сам разложится по отделам магазина. Долгое нажатие на товар — цена и магазин: приложение подскажет, где дешевле.") }
+            val total = open.mapNotNull { it.price }.sum()
+            if (total > 0) item { Hint("Примерно на ${SplitMath.money(total)} по известным ценам") }
+            items(items, key = { it.id }) { i -> Column {
+                if (byAisle && !i.done) {
+                    val a = Shop.aisle(i.name)
+                    val idx = open.indexOf(i)
+                    if (idx == 0 || Shop.aisle(open[idx - 1].name) != a) Text(a, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp, bottom = 2.dp))
+                }
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
-                        .clickable { vm.updateWork { w0 -> w0.copy(shopItems = w0.shopItems.map { if (it.id == i.id) it.copy(done = !it.done) else it }) } }
+                        .combinedClickable(
+                            onClick = { vm.updateWork { w0 -> w0.copy(shopItems = w0.shopItems.map { if (it.id == i.id) it.copy(done = !it.done) else it }) } },
+                            onLongClick = { priceFor = i },
+                        )
                         .padding(end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -216,9 +233,15 @@ fun ShoppingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         textDecoration = if (i.done) TextDecoration.LineThrough else null,
                         color = if (i.done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     )
-                    if (i.qty.isNotBlank()) Text(i.qty, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (i.qty.isNotBlank() || i.price != null) Text(listOfNotNull(i.qty.takeIf { it.isNotBlank() }, i.price?.let { SplitMath.money(it) }).joinToString(" · "),
+                            style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (!i.done) Shop.cheaper(w.shopPrices, i.name, i.store, i.price)?.let { c ->
+                            Text("дешевле: ${c.store} ${SplitMath.money(c.price)}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF3F8A5A))
+                        }
+                    }
                 }
-            }
+            } }
             if (items.any { it.done }) {
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -228,6 +251,42 @@ fun ShoppingTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 }
             }
         }
+    }
+    priceFor?.let { i ->
+        var qty by remember { mutableStateOf(i.qty) }
+        var price by remember { mutableStateOf(i.price?.let { SplitMath.plain(it) } ?: "") }
+        val stores = w.shopPrices.map { it.store }.distinct().take(8)
+        var store by remember { mutableStateOf(i.store.ifBlank { stores.firstOrNull().orEmpty() }) }
+        AlertDialog(
+            onDismissRequest = { priceFor = null },
+            title = { Text(i.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(qty, { qty = it }, label = { Text("Количество") }, singleLine = true)
+                    OutlinedTextField(price, { price = it.filter { c -> c.isDigit() || c == ',' || c == '.' } }, label = { Text("Цена, ₽") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                    OutlinedTextField(store, { store = it }, label = { Text("Магазин") }, singleLine = true, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        (stores + listOf("Пятёрочка", "Магнит", "Перекрёсток", "Лента", "Ашан", "ВкусВилл")).distinct().take(10).forEach { s -> FilterChip(store == s, { store = s }, label = { Text(s) }) }
+                    }
+                    val hist = w.shopPrices.filter { it.name == i.name.trim().lowercase() }.sortedByDescending { it.date }.take(5)
+                    if (hist.isNotEmpty()) Hint("Раньше: " + hist.joinToString { "${it.store} ${SplitMath.money(it.price)}" })
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val p = price.replace(',', '.').toDoubleOrNull()?.let { Math.round(it * 100) }
+                    vm.updateWork { w0 ->
+                        w0.copy(
+                            shopItems = w0.shopItems.map { if (it.id == i.id) it.copy(qty = qty.trim(), price = p, store = store.trim()) else it },
+                            shopPrices = if (p != null && store.isNotBlank()) (w0.shopPrices + ShopPrice(i.name.trim().lowercase(), store.trim(), p, vm.today.toString())).takeLast(1000) else w0.shopPrices,
+                        )
+                    }
+                    priceFor = null
+                }) { Text("Сохранить") }
+            },
+            dismissButton = { TextButton(onClick = { priceFor = null }) { Text("Отмена") } },
+        )
     }
     if (newList) {
         var name by remember { mutableStateOf("") }

@@ -18,9 +18,38 @@ data class ShopItem(
     val qty: String = "",
     val done: Boolean = false,
     val created: Long = System.currentTimeMillis(),
+    val price: Long? = null,
+    val store: String = "",
 )
 
+/** Цена товара в магазине — для подсказки «где дешевле». */
+@Serializable
+data class ShopPrice(val name: String, val store: String, val price: Long, val date: String)
+
 object Shop {
+    /** Отделы магазина — список идёт в порядке обхода зала. */
+    val AISLES: List<Pair<String, List<String>>> = listOf(
+        "🥦 Овощи и фрукты" to listOf("яблок", "банан", "помидор", "огур", "картоф", "лук", "морков", "капуст", "лимон", "апельсин", "зелень", "салат", "перец", "чеснок", "ягод", "груш", "мандарин", "кабач", "авокадо", "грибы", "шампиньон"),
+        "🍞 Хлеб и выпечка" to listOf("хлеб", "батон", "лаваш", "булк", "багет", "пирож", "лепёшк"),
+        "🥛 Молочное и яйца" to listOf("молок", "кефир", "сметан", "творог", "сыр", "йогурт", "масло сливоч", "сливки", "ряженк", "яйц"),
+        "🥩 Мясо и рыба" to listOf("курин", "куриц", "филе", "говяд", "свинин", "фарш", "колбас", "сосиск", "ветчин", "рыб", "лосос", "креветк", "индейк", "бекон"),
+        "🥫 Бакалея" to listOf("макарон", "паст", "рис", "греч", "овсян", "мука", "сахар", "соль", "масло подсол", "оливков", "консерв", "кофе", "чай", "крупа", "соус", "кетчуп", "майонез", "специ", "хлопья"),
+        "🧃 Напитки" to listOf("вода", "сок", "газиров", "пиво", "вино", "лимонад", "морс", "квас"),
+        "🍫 Сладкое" to listOf("шоколад", "печенье", "конфет", "торт", "мороженое", "зефир", "вафл", "мёд", "мед ", "варенье"),
+        "🧊 Заморозка" to listOf("пельмен", "заморож", "вареник", "наггетс"),
+        "🧴 Бытовое и гигиена" to listOf("порошок", "средство", "губк", "бумаг", "салфет", "мыло", "шампун", "зубн", "пакет", "фольг", "гель", "дезодор", "прокладк", "подгузн"),
+        "💊 Аптека" to listOf("таблет", "пластыр", "витамин", "капли", "бинт", "мазь", "сироп"),
+    )
+    const val OTHER = "🛍 Прочее"
+    fun aisle(name: String): String { val n = name.lowercase(); return AISLES.firstOrNull { (_, k) -> k.any { n.contains(it) } }?.first ?: OTHER }
+    fun aisleOrder(a: String) = AISLES.indexOfFirst { it.first == a }.let { if (it < 0) 99 else it }
+
+    /** Где дешевле: самая низкая известная цена в другом магазине. */
+    fun cheaper(prices: List<ShopPrice>, name: String, store: String, price: Long?): ShopPrice? {
+        val n = name.trim().lowercase()
+        val best = prices.filter { it.name == n }.groupBy { it.store }.mapValues { it.value.maxBy { p -> p.date } }.values.minByOrNull { it.price } ?: return null
+        return if (best.store != store && (price == null || best.price < price)) best else null
+    }
     /** «молоко 2, хлеб, яйца 10 шт» → отдельные позиции. */
     fun parse(text: String): List<Pair<String, String>> = text.split(',', '\n', ';')
         .map { it.trim() }.filter { it.isNotEmpty() }

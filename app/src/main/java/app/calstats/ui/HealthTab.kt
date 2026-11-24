@@ -110,7 +110,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.math.roundToInt
 
-internal enum class HView(val title: String) { TODAY("День"), FOOD("Питание"), BODY("Активность"), MEDS("Лекарства"), CYCLE("Цикл"), STATS("Статистика"), PROFILE("Профиль") }
+internal enum class HView(val title: String) { TODAY("День"), FOOD("Питание"), BODY("Активность"), VITALS("Давление и анализы"), MEDS("Лекарства"), CYCLE("Цикл"), STATS("Статистика"), PROFILE("Профиль") }
 
 private val PROT = Color(0xFF4A6A8A)
 private val FAT = Color(0xFFC9A46A)
@@ -160,6 +160,7 @@ fun HealthTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 HView.BODY -> BodyView(vm) { weightDialog = true }
                 HView.STATS -> StatsView(vm) { d -> day = d; view = HView.TODAY }
                 HView.MEDS -> MedsView(vm)
+                HView.VITALS -> VitalsView(vm)
                 HView.CYCLE -> CycleView(vm)
                 HView.PROFILE -> ProfileView(vm)
             }

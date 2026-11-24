@@ -322,6 +322,32 @@ private fun CardShow(vm: MainViewModel, c: LoyaltyCard, onEdit: () -> Unit, onDi
             Text(c.number.chunked(4).joinToString(" "), color = Color(0xFF121721), fontFamily = FontFamily.Monospace, fontSize = 22.sp, textAlign = TextAlign.Center,
                 modifier = Modifier.padding(12.dp))
             if (c.note.isNotBlank()) Text(c.note, color = Color(0xFF5E6472), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 16.dp))
+            // Купоны и акции со сроком
+            var couponText by remember { mutableStateOf("") }
+            var couponUntil by remember { mutableStateOf<java.time.LocalDate?>(null) }
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                c.coupons.forEach { k ->
+                    val left = k.until?.let { java.time.temporal.ChronoUnit.DAYS.between(vm.today, java.time.LocalDate.parse(it)) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🎟 ${k.text}" + (k.until?.let { " · до ${app.calstats.Fmt.dateNoYear(java.time.LocalDate.parse(it))}" } ?: ""), Modifier.weight(1f),
+                            color = if (left != null && left < 0) Color(0xFF9AA0A6) else if (left != null && left <= 2) Color(0xFFC93D3D) else Color(0xFF33373D), style = MaterialTheme.typography.bodyMedium)
+                        Text("✕", Modifier.clickable { vm.updateWork { w -> w.copy(cards = w.cards.map { if (it.id == c.id) it.copy(coupons = it.coupons.filter { x -> x.id != k.id }) else it }) } }.padding(6.dp), color = Color(0xFF9AA0A6))
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.foundation.text.BasicTextField(couponText, { couponText = it }, Modifier.weight(1f).padding(vertical = 8.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFF33373D)),
+                        decorationBox = { inner -> if (couponText.isEmpty()) Text("+ купон или акция (−20% на всё)", color = Color(0xFF9AA0A6), style = MaterialTheme.typography.bodyMedium); inner() })
+                    if (couponText.isNotBlank()) {
+                        TextButton(onClick = { pickDate(ctx, couponUntil ?: vm.today.plusDays(7)) { couponUntil = it } }) { Text(couponUntil?.let { "до " + app.calstats.Fmt.dateNoYear(it) } ?: "срок", color = Color(0xFF3F3561)) }
+                        TextButton(onClick = {
+                            val k = app.calstats.work.Coupon(newId(), couponText.trim(), couponUntil?.toString())
+                            vm.updateWork { w -> w.copy(cards = w.cards.map { if (it.id == c.id) it.copy(coupons = it.coupons + k) else it }) }
+                            couponText = ""; couponUntil = null
+                        }) { Text("OK", color = Color(0xFF3F3561)) }
+                    }
+                }
+            }
             Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOfNotNull(c.photoFront, c.photoBack).forEach { p ->
                     FileImage(p, Modifier.size(width = 120.dp, height = 76.dp).clip(RoundedCornerShape(10.dp)).clickable { photo = p })

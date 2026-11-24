@@ -12,4 +12,5 @@
     <string name="sc_cards_s">Карты</string>
     <string name="sc_cards_l">Бонусные карты</string>
     <string name="tile_quick">Быстрая запись</string>
+    <string name="cards_widget_description">Бонусные карты: открыть штрихкод в одно нажатие</string>
 </resources>

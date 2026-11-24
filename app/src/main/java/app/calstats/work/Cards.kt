@@ -25,7 +25,14 @@ data class LoyaltyCard(
     val created: Long = System.currentTimeMillis(),
     /** Где пользовались картой — для подсказки у магазина. */
     val places: List<CardPlace> = emptyList(),
+    /** Купоны и акции со сроком. */
+    val coupons: List<Coupon> = emptyList(),
+    /** Срок действия самой карты. */
+    val expires: String? = null,
 )
+
+@Serializable
+data class Coupon(val id: String, val text: String, val until: String? = null)
 
 @Serializable
 data class CardPlace(val lat: Double, val lon: Double)

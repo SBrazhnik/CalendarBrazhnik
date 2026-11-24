@@ -224,7 +224,10 @@ private fun LockedView(vm: MainViewModel) {
 private fun DocsList(vm: MainViewModel) {
     val ctx = LocalContext.current
     val today = vm.today
-    val docs = vm.work.documents.filter { !it.archived }
+    // Семья: фильтр по владельцу
+    var who by navView(vm, "docsOwner", "")
+    val owners = vm.work.documents.filter { !it.archived }.map { it.owner.trim() }.filter { it.isNotBlank() }.distinct().sorted()
+    val docs = vm.work.documents.filter { !it.archived && (who.isEmpty() || it.owner.trim() == who) }
     val attention = DocsMath.attention(docs, today)
     val rest = docs.filter { it !in attention }.sortedWith(compareBy({ it.owner }, { it.kind.ordinal }))
     val archived = vm.work.documents.filter { it.archived }
@@ -251,6 +254,12 @@ private fun DocsList(vm: MainViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+            }
+        }
+        if (owners.size > 1) item {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = who.isEmpty(), onClick = { who = "" }, label = { Text("Вся семья") })
+                owners.forEach { o -> FilterChip(selected = who == o, onClick = { who = if (who == o) "" else o }, label = { Text(o) }) }
             }
         }
         if (docs.isEmpty()) {
@@ -467,6 +476,25 @@ fun DocEditScreen(vm: MainViewModel, id: String?, snackbar: SnackbarHostState) {
         }
     }
 
+    // Сканер документов Google: обрезка по краям, выравнивание, несколько страниц
+    val scanner = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+        vm.keepDocsUnlocked = false
+        val r = com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult.fromActivityResultIntent(res.data) ?: return@rememberLauncherForActivityResult
+        val added = r.pages.orEmpty().mapNotNull { copyPhoto(ctx, it.imageUri) }
+        photos = photos + added
+        if (added.isNotEmpty()) vm.message = "Отсканировано страниц: ${added.size}"
+    }
+    fun scan() {
+        val act = ctx as? android.app.Activity ?: return
+        val opts = com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true).setPageLimit(10)
+            .setResultFormats(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+            .setScannerMode(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL).build()
+        vm.keepDocsUnlocked = true
+        com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(opts).getStartScanIntent(act)
+            .addOnSuccessListener { scanner.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build()) }
+            .addOnFailureListener { vm.keepDocsUnlocked = false; vm.message = "Сканер недоступен: нужны сервисы Google Play" }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(6)) { uris ->
         vm.keepDocsUnlocked = false
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
@@ -584,7 +612,19 @@ fun DocEditScreen(vm: MainViewModel, id: String?, snackbar: SnackbarHostState) {
                     },
                     contentAlignment = Alignment.Center,
                 ) { Text("+ фото", color = MaterialTheme.colorScheme.primary) }
+                Box(
+                    Modifier.size(96.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).clickable { scan() },
+                    contentAlignment = Alignment.Center,
+                ) { Text("📄 скан", color = MaterialTheme.colorScheme.primary) }
             }
+            if (photos.isNotEmpty()) OutlinedButton(onClick = {
+                runCatching {
+                    val f = docPdf(ctx, title.ifBlank { kind.title }, photos)
+                    val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
+                    ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND).setType("application/pdf")
+                        .putExtra(android.content.Intent.EXTRA_STREAM, uri).addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION), "PDF документа"))
+                }.onFailure { vm.message = "Не удалось собрать PDF" }
+            }) { Text("📤 Отправить PDF (${photos.size} стр.)") }
             if (photos.isNotEmpty()) {
                 OutlinedButton(onClick = {
                     scanning = true
@@ -761,4 +801,26 @@ fun scanReceipt(ctx: Context, vm: MainViewModel) {
             vm.message = "Гарантия на год добавлена — укажите, что купили"
         }
         .addOnFailureListener { vm.message = "Сканер недоступен: нужны сервисы Google Play" }
+}
+
+
+/** Собрать фото документа в один PDF (страницы A4). */
+private fun docPdf(ctx: Context, title: String, photos: List<String>): File {
+    val doc = android.graphics.pdf.PdfDocument()
+    photos.forEachIndexed { i, name ->
+        val bmp = BitmapFactory.decodeFile(photoFile(ctx, name).path) ?: return@forEachIndexed
+        val pw = 595; val ph = 842
+        val page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(pw, ph, i + 1).create())
+        val scale = minOf((pw - 40f) / bmp.width, (ph - 40f) / bmp.height)
+        val w = bmp.width * scale; val h = bmp.height * scale
+        val l = (pw - w) / 2; val t = (ph - h) / 2
+        page.canvas.drawBitmap(bmp, null, android.graphics.RectF(l, t, l + w, t + h), android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+        doc.finishPage(page)
+        bmp.recycle()
+    }
+    val dir = File(ctx.cacheDir, "reports").apply { mkdirs() }
+    val out = File(dir, title.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(60) + ".pdf")
+    out.outputStream().use { doc.writeTo(it) }
+    doc.close()
+    return out
 }

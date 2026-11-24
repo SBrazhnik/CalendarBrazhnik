@@ -264,6 +264,10 @@ object Notify {
         if (today.dayOfMonth in 20..25 && w.meters.isNotEmpty() &&
             w.meters.any { m -> w.meterReadings.none { it.meterId == m.id && it.date.startsWith(today.toString().take(7)) } }) out += "💧 Передайте показания счётчиков"
         out += DocsReminder.lines(ctx, today)
+        w.cards.forEach { c ->
+            c.coupons.filter { it.until != null && runCatching { java.time.LocalDate.parse(it.until) }.getOrNull()?.let { d -> !d.isBefore(today) && !d.isAfter(today.plusDays(2)) } == true }
+                .forEach { k -> out += "🎟 ${c.store}: «${k.text}» до ${Fmt.dateNoYear(java.time.LocalDate.parse(k.until))}" }
+        }
         w.chores.filter { it.daysLeft(today) <= 0 }.takeIf { it.isNotEmpty() }?.let { l -> out += "🧹 По дому: " + l.take(3).joinToString { it.title.lowercase() } + if (l.size > 3) " и ещё ${l.size - 3}" else "" }
         w.plants.filter { it.waterIn(today) <= 0 }.takeIf { it.isNotEmpty() }?.let { l -> out += "🪴 Полить: " + l.joinToString { it.name } }
         w.trips.filter { app.calstats.work.Trips.daysLeft(it, today) in listOf(1L, 3L, 7L) }.forEach { t ->

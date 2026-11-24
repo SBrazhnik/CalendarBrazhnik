@@ -374,6 +374,10 @@ data class Workspace(
     val chores: List<Chore> = emptyList(),
     val plants: List<Plant> = emptyList(),
     val noteFolders: List<NoteFolder> = emptyList(),
+    val pressure: List<Pressure> = emptyList(),
+    val symptoms: List<Symptom> = emptyList(),
+    val labs: List<LabResult> = emptyList(),
+    val shopPrices: List<ShopPrice> = emptyList(),
 ) {
     fun category(id: String?) = finCategories.firstOrNull { it.id == id }
     fun account(id: String?) = accounts.firstOrNull { it.id == id }

@@ -28,6 +28,42 @@ data class MedLog(val medId: String, val date: String, val time: String, val tak
 @Serializable
 data class Mood(val date: String, val mood: Int, val energy: Int = 0, val note: String = "", val tags: List<String> = emptyList())
 
+/** Давление и пульс. */
+@Serializable
+data class Pressure(val id: String, val at: Long, val sys: Int, val dia: Int, val pulse: Int = 0, val note: String = "")
+
+/** Самочувствие: симптом и сила 1–5. */
+@Serializable
+data class Symptom(val id: String, val date: String, val name: String, val level: Int = 3, val note: String = "")
+
+/** Результат анализа с нормой. */
+@Serializable
+data class LabResult(val id: String, val date: String, val name: String, val value: Double, val unit: String = "", val min: Double? = null, val max: Double? = null, val note: String = "") {
+    val status: Int get() = when { min != null && value < min -> -1; max != null && value > max -> 1; else -> 0 }
+}
+
+object Vitals {
+    /** Категория давления по ВОЗ/ESC. */
+    fun category(sys: Int, dia: Int): Pair<String, Int> = when {
+        sys >= 180 || dia >= 110 -> "очень высокое" to 3
+        sys >= 140 || dia >= 90 -> "высокое" to 2
+        sys >= 130 || dia >= 85 -> "повышенное" to 1
+        sys < 90 || dia < 60 -> "пониженное" to 1
+        else -> "норма" to 0
+    }
+
+    /** Частые анализы с нормами для взрослых (ориентир; нормы лаборатории могут отличаться). */
+    val LABS = listOf(
+        LabResult("", "", "Гемоглобин", 0.0, "г/л", 120.0, 160.0), LabResult("", "", "Глюкоза", 0.0, "ммоль/л", 3.9, 5.6),
+        LabResult("", "", "Холестерин общий", 0.0, "ммоль/л", null, 5.2), LabResult("", "", "ЛПНП", 0.0, "ммоль/л", null, 3.0),
+        LabResult("", "", "ТТГ", 0.0, "мЕд/л", 0.4, 4.0), LabResult("", "", "Витамин D", 0.0, "нг/мл", 30.0, 100.0),
+        LabResult("", "", "Ферритин", 0.0, "нг/мл", 15.0, 150.0), LabResult("", "", "Креатинин", 0.0, "мкмоль/л", 62.0, 106.0),
+        LabResult("", "", "АЛТ", 0.0, "Ед/л", null, 41.0), LabResult("", "", "СОЭ", 0.0, "мм/ч", null, 15.0),
+        LabResult("", "", "Лейкоциты", 0.0, "×10⁹/л", 4.0, 9.0), LabResult("", "", "Гликированный гемоглобин", 0.0, "%", null, 6.0),
+    )
+    val SYMPTOMS = listOf("Головная боль", "Усталость", "Боль в спине", "Простуда", "Температура", "Аллергия", "Бессонница", "Тревога", "Боль в животе", "Головокружение")
+}
+
 @Serializable
 data class CycleLog(val start: String, val length: Int = 5)
 
