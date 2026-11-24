@@ -20,7 +20,7 @@ class EbookTest {
     }
 
     @Test fun epub() {
-        val f = File.createTempFile("t", ".epub")
+        val f = File.createTempFile("book", ".epub")
         ZipOutputStream(f.outputStream()).use { z ->
             fun put(n: String, s: String) { z.putNextEntry(ZipEntry(n)); z.write(s.toByteArray()); z.closeEntry() }
             put("META-INF/container.xml", """<container><rootfiles><rootfile full-path="OEBPS/c.opf"/></rootfiles></container>""")
