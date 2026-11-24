@@ -96,6 +96,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -205,14 +211,27 @@ fun NotesTab(vm: MainViewModel, snackbar: SnackbarHostState) {
 
     val folders = w.noteFolders.sortedBy { it.order }
     val reminders = folder == "REM"
+    // Перетаскивание: зажать заметку и вести — порядок; отпустить на папке — переместить
+    val sp = remember { ctx.getSharedPreferences("notes", android.content.Context.MODE_PRIVATE) }
+    var manual by remember { mutableStateOf(sp.getBoolean("manual", false)) }
+    val bounds = remember { androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>() }
+    val chipBounds = remember { androidx.compose.runtime.mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>() }
+    var dragId by remember { mutableStateOf<String?>(null) }
+    var dragPos by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var grab by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var dragOrder by remember { mutableStateOf<List<String>>(emptyList()) }
+    var moved by remember { mutableStateOf(0f) }
+    var quickFor by remember { mutableStateOf<Note?>(null) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val hoverChip = if (dragId != null && moved > 15f) chipBounds.entries.firstOrNull { it.value.contains(dragPos) }?.key else null
     val q = query.trim().lowercase()
     val shown = w.notes.filter { it.archived == archive }.filter { n ->
         (folder == "ALL" || folder == "REM" || n.folderId == folder) &&
             (q.isEmpty() || n.asText().lowercase().contains(q) || n.labels.any { it.lowercase().contains(q) } || n.files.any { it.name.lowercase().contains(q) })
-    }.sortedByDescending { it.updated }
+    }.let { l -> if (manual) l.sortedWith(compareBy<Note>({ it.order }, { -it.updated })) else l.sortedByDescending { it.updated } }
 
     fun newNote(checklist: Boolean) {
-        val n = Note(newId(), folderId = folder.takeIf { it != "ALL" && it != "REM" }, isChecklist = checklist,
+        val n = Note(newId(), folderId = folder.takeIf { it != "ALL" && it != "REM" }, isChecklist = checklist, order = (w.notes.minOfOrNull { it.order } ?: 0.0) - 1,
             checklist = if (checklist) listOf(CheckItem(newId(), "")) else emptyList())
         vm.updateWork { WorkOps.upsertNote(it, n) }
         vm.push(Screen.NoteEdit(n.id))
@@ -235,6 +254,9 @@ fun NotesTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("Новая папка") }, onClick = { menu = false; editFolder = NoteFolder(newId(), "", order = folders.size) })
                             DropdownMenuItem(text = { Text(if (archive) "Все заметки" else "Архив") }, onClick = { menu = false; archive = !archive })
+                            DropdownMenuItem(text = { Text(if (manual) "Сортировать по изменению" else "Порядок вручную") }, onClick = {
+                                menu = false; manual = !manual; sp.edit().putBoolean("manual", manual).apply()
+                            })
                             DropdownMenuItem(text = { Text("Импорт из Google Keep (Takeout)") }, onClick = {
                                 menu = false; importZip.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
                             })
@@ -261,13 +283,16 @@ fun NotesTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             // Папки — как в Samsung Notes: цветные, долгое нажатие — изменить
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FolderChip("Все", null, folder == "ALL", w.notes.count { !it.archived }) { folder = "ALL" }
+                fun Modifier.chip(key: String) = this.onGloballyPositioned { chipBounds[key] = it.boundsInRoot() }
+                FolderChip("Все", null, folder == "ALL" || hoverChip == "ALL", w.notes.count { !it.archived }, modifier = Modifier.chip("ALL")) { folder = "ALL" }
                 FolderChip("⏰ Напоминания", null, reminders, w.notes.count { it.remindAt != null && !it.remindDone && !it.archived }) { folder = "REM" }
                 folders.forEach { f ->
-                    FolderChip(f.name, f.color, folder == f.id, w.notes.count { it.folderId == f.id && !it.archived }, onLong = { editFolder = f }) { folder = f.id }
+                    FolderChip(f.name, f.color, folder == f.id || hoverChip == f.id, w.notes.count { it.folderId == f.id && !it.archived }, onLong = { editFolder = f }, modifier = Modifier.chip(f.id)) { folder = f.id }
                 }
                 FolderChip("+ Папка", null, false, null) { editFolder = NoteFolder(newId(), "", order = folders.size) }
             }
+            if (dragId != null && moved > 15f) Text("Отпустите на папке — заметка переместится в неё", Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             if (reminders) {
                 val active = shown.filter { it.remindAt != null && !it.remindDone }.sortedBy { it.remindAt }
                 val done = shown.filter { it.remindAt != null && it.remindDone }.sortedByDescending { it.updated }
@@ -305,25 +330,116 @@ fun NotesTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                         }
                     }
                 }
-                val pinned = shown.filter { it.pinned }
-                val others = shown.filter { !it.pinned }
+                val list = if (dragId != null) dragOrder.mapNotNull { id -> shown.firstOrNull { it.id == id } } else shown
+                val pinned = list.filter { it.pinned }
+                val others = list.filter { !it.pinned }
+                fun finish() {
+                    val id = dragId ?: return
+                    val n = shown.firstOrNull { it.id == id }
+                    dragId = null
+                    if (n == null) return
+                    if (moved < 15f) { quickFor = n; return }
+                    val target = chipBounds.entries.firstOrNull { it.value.contains(dragPos) }?.key
+                    if (target != null) {
+                        val fid = if (target == "ALL") null else target
+                        if (n.folderId != fid) {
+                            vm.updateWork { ww -> ww.copy(notes = ww.notes.map { if (it.id == id) it.copy(folderId = fid) else it }) }
+                            vm.message = "Перемещено " + (folders.firstOrNull { it.id == fid }?.let { "в «${it.name}»" } ?: "из папки")
+                        }
+                        return
+                    }
+                    // Новый порядок: записываем номера, дальше список — вручную
+                    val ids = dragOrder
+                    vm.updateWork { ww -> ww.copy(notes = ww.notes.map { x -> val k = ids.indexOf(x.id); if (k >= 0) x.copy(order = k.toDouble()) else x }) }
+                    if (!manual) { manual = true; sp.edit().putBoolean("manual", true).apply() }
+                }
+                @Composable
+                fun Cell(n: Note) {
+                    val isDrag = dragId == n.id
+                    Box(
+                        Modifier
+                            .onGloballyPositioned { bounds[n.id] = it.boundsInRoot() }
+                            .zIndex(if (isDrag) 5f else 0f)
+                            .graphicsLayer {
+                                val r = bounds[n.id]
+                                if (isDrag && r != null) {
+                                    translationX = dragPos.x - grab.x - r.left; translationY = dragPos.y - grab.y - r.top
+                                    scaleX = 1.04f; scaleY = 1.04f; shadowElevation = 16f; alpha = 0.95f
+                                }
+                            }
+                            .pointerInput(n.id) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { off ->
+                                        val r = bounds[n.id] ?: return@detectDragGesturesAfterLongPress
+                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        dragOrder = shown.map { it.id }; grab = off; dragPos = androidx.compose.ui.geometry.Offset(r.left + off.x, r.top + off.y); moved = 0f; dragId = n.id
+                                    },
+                                    onDrag = { ch, d ->
+                                        ch.consume(); dragPos += d; moved += d.getDistance()
+                                        val over = bounds.entries.firstOrNull { (id, rect) -> id != n.id && id in dragOrder && rect.contains(dragPos) }?.key
+                                        if (over != null) {
+                                            val a = dragOrder.indexOf(n.id); val b = dragOrder.indexOf(over)
+                                            val sameSection = shown.firstOrNull { it.id == over }?.pinned == n.pinned
+                                            if (a >= 0 && b >= 0 && sameSection) dragOrder = dragOrder.toMutableList().apply { removeAt(a); add(b, n.id) }
+                                        }
+                                    },
+                                    onDragEnd = { finish() },
+                                    onDragCancel = { dragId = null },
+                                )
+                            },
+                    ) { NoteCard(vm, n) { vm.push(Screen.NoteEdit(n.id)) } }
+                }
                 LazyVerticalStaggeredGrid(
                     columns = StaggeredGridCells.Fixed(2), modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 140.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalItemSpacing = 8.dp,
                 ) {
+                    if (shown.size > 1 && !manual) item(span = StaggeredGridItemSpan.FullLine) {
+                        Text("Зажмите заметку и ведите — чтобы поменять порядок или перенести в папку", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp))
+                    }
                     if (pinned.isNotEmpty()) {
                         item(span = StaggeredGridItemSpan.FullLine) { GridLabel("Закреплённые") }
-                        items(pinned.size, key = { pinned[it].id }) { i -> NoteCard(vm, pinned[i]) { vm.push(Screen.NoteEdit(pinned[i].id)) } }
+                        items(pinned.size, key = { pinned[it].id }) { i -> Box(Modifier.animateItem()) { Cell(pinned[i]) } }
                         if (others.isNotEmpty()) item(span = StaggeredGridItemSpan.FullLine) { GridLabel("Остальные") }
                     }
-                    items(others.size, key = { others[it].id }) { i -> NoteCard(vm, others[i]) { vm.push(Screen.NoteEdit(others[i].id)) } }
+                    items(others.size, key = { others[it].id }) { i -> Box(Modifier.animateItem()) { Cell(others[i]) } }
                 }
             }
         }
     }
 
     editFolder?.let { f -> FolderDialog(vm, f, onDeleted = { if (folder == f.id) folder = "ALL" }) { editFolder = null } }
+    quickFor?.let { n ->
+        fun upd(f: (Note) -> Note) = vm.updateWork { ww -> ww.copy(notes = ww.notes.map { if (it.id == n.id) f(it) else it }) }
+        AlertDialog(
+            onDismissRequest = { quickFor = null },
+            title = { Text(n.title.ifBlank { n.body.lineSequence().firstOrNull().orEmpty() }.take(60).ifBlank { "Заметка" }) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Переместить в папку", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    (listOf<NoteFolder?>(null) + folders).forEach { f ->
+                        Row(Modifier.fillMaxWidth().clickable { upd { it.copy(folderId = f?.id) }; quickFor = null; vm.message = if (f == null) "Без папки" else "Перемещено в «${f.name}»" }.padding(vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(12.dp).clip(CircleShape).background(f?.color?.let { Color(it) } ?: MaterialTheme.colorScheme.outlineVariant))
+                            Spacer(Modifier.width(10.dp))
+                            Text((f?.name ?: "Без папки") + if (n.folderId == f?.id) "  ✓" else "", style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                    Text(if (n.pinned) "📌 Открепить" else "📌 Закрепить", Modifier.fillMaxWidth().clickable { upd { it.copy(pinned = !it.pinned) }; quickFor = null }.padding(vertical = 9.dp))
+                    Text("⬆ Наверх", Modifier.fillMaxWidth().clickable {
+                        upd { it.copy(order = (w.notes.minOfOrNull { x -> x.order } ?: 0.0) - 1) }
+                        if (!manual) { manual = true; sp.edit().putBoolean("manual", true).apply() }
+                        quickFor = null
+                    }.padding(vertical = 9.dp))
+                    Text("🗄 В архив", Modifier.fillMaxWidth().clickable { upd { it.copy(archived = !it.archived) }; quickFor = null }.padding(vertical = 9.dp))
+                    Text("🗑 Удалить", Modifier.fillMaxWidth().clickable { vm.updateWork { WorkOps.deleteNote(it, n.id) }; quickFor = null }.padding(vertical = 9.dp), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = { TextButton(onClick = { quickFor = null }) { Text("Закрыть") } },
+        )
+    }
     if (quickReminder) ReminderDialog(vm, null, onDismiss = { quickReminder = false })
     if (help) AlertDialog(
         onDismissRequest = { help = false },
@@ -348,9 +464,9 @@ private fun newRecordingNote(vm: MainViewModel, ctx: Context) {
 }
 
 @Composable
-private fun FolderChip(name: String, color: Int?, selected: Boolean, count: Int?, onLong: (() -> Unit)? = null, onClick: () -> Unit) {
+private fun FolderChip(name: String, color: Int?, selected: Boolean, count: Int?, onLong: (() -> Unit)? = null, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(12.dp))
+        modifier.clip(RoundedCornerShape(12.dp))
             .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
             .combinedClickable(onClick = onClick, onLongClick = onLong)

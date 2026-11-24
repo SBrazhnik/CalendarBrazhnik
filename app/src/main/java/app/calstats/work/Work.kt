@@ -296,6 +296,8 @@ data class Note(
     val updated: Long = System.currentTimeMillis(),
     /** Папка (как в Samsung Notes). */
     val folderId: String? = null,
+    /** Ручной порядок (перетаскивание). */
+    val order: Double = 0.0,
     /** Оформление текста body (жирный, цвет, размер…) — JSON со списком отрезков. */
     val rich: String = "",
     val files: List<NoteFile> = emptyList(),
