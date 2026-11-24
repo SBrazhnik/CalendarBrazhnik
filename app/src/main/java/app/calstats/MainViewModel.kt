@@ -108,6 +108,8 @@ sealed interface Screen {
     data class Book(val id: String) : Screen
     data class ExpenseEdit(val bookId: String, val expenseId: String?) : Screen
     data object Settings : Screen
+    data object Search : Screen
+    data object Trash : Screen
     data object Modules : Screen
     data class NoteEdit(val id: String) : Screen
     data class WishListDetail(val id: String) : Screen
@@ -338,6 +340,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var loanCalc by mutableStateOf(false)
     /** Карта, пришедшая из файла .pkpass или «Поделиться», — откроется в модуле «Карты». */
     var pendingCard by mutableStateOf<app.calstats.work.LoyaltyCard?>(null)
+    /** Открыть карту на кассе (из поиска, напоминания у магазина). */
+    var showCardId by mutableStateOf<String?>(null)
     var openDebt by mutableStateOf<String?>(null)
     var newDebt by mutableStateOf(false)
     /** Окно «Что нового» уже проверено в этом запуске. */
@@ -945,12 +949,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- задачи, проекты, люди, расходы ----------
 
     /** Любое изменение рабочего пространства: сохраняем в файл и обновляем виджеты. */
+    fun undoDelete(e: TrashEntry) {
+        updateWork { Trash.restore(it, e) }
+        undo = null
+        viewModelScope.launch(Dispatchers.IO) { Trash.remove(getApplication(), e.id) }
+    }
+
     private val saveLock = kotlinx.coroutines.sync.Mutex()
     private var sideJob: kotlinx.coroutines.Job? = null
 
+    /** Последнее удаление — для кнопки «Отменить». */
+    var undo by mutableStateOf<TrashEntry?>(null)
+
     fun updateWork(transform: (Workspace) -> Workspace) {
-        val w = transform(work)
+        val old = work
+        val w = transform(old)
         work = w
+        if (Trash.count(w) < Trash.count(old)) {
+            Trash.diff(old, w)?.takeIf { it.count <= 300 }?.let { e ->
+                undo = e
+                viewModelScope.launch(Dispatchers.IO) { Trash.add(getApplication(), e) }
+            }
+        }
         // Запись по очереди и только самой свежей версии: быстрые нажатия (вода, привычки)
         // больше не пишут файл параллельно и не могут затереть новое старым.
         viewModelScope.launch(Dispatchers.IO) {

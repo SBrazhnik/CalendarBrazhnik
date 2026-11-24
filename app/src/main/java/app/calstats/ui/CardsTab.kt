@@ -189,6 +189,7 @@ fun CardsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         if (c == null) vm.message = "Это не карта .pkpass" else edit = c
     }
     LaunchedEffect(vm.pendingCard) { vm.pendingCard?.let { edit = it; vm.pendingCard = null } }
+    LaunchedEffect(vm.showCardId) { vm.showCardId?.let { show = it; vm.showCardId = null } }
 
     fun scan() {
         com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(ctx).startScan()

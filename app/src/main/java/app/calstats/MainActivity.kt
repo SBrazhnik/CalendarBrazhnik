@@ -135,6 +135,14 @@ fun App(vm: MainViewModel) {
             vm.message = null
         }
     }
+    val undo = vm.undo
+    LaunchedEffect(undo) {
+        if (undo != null) {
+            val r = snackbar.showSnackbar("Удалено: ${undo.label}", actionLabel = "Отменить", duration = androidx.compose.material3.SnackbarDuration.Long)
+            if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) vm.undoDelete(undo)
+            else if (vm.undo == undo) vm.undo = null
+        }
+    }
 
     if (!vm.hasPermission) {
         PermissionScreen(onGranted = { vm.onResume() })
@@ -180,6 +188,8 @@ fun App(vm: MainViewModel) {
         is Screen.Book -> app.calstats.ui.BookScreen(vm, screen.id, snackbar)
         is Screen.ExpenseEdit -> app.calstats.ui.ExpenseScreen(vm, screen.bookId, screen.expenseId, snackbar)
         Screen.Modules -> app.calstats.ui.ModulesScreen(vm, snackbar)
+        Screen.Search -> app.calstats.ui.SearchScreen(vm, snackbar)
+        Screen.Trash -> app.calstats.ui.TrashScreen(vm, snackbar)
         is Screen.NoteEdit -> app.calstats.ui.NoteEditScreen(vm, screen.id, snackbar)
         is Screen.WishListDetail -> app.calstats.ui.WishListScreen(vm, screen.id, snackbar)
         is Screen.DocEdit -> app.calstats.ui.DocEditScreen(vm, screen.id, snackbar)

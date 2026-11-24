@@ -110,7 +110,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.math.roundToInt
 
-private enum class HView(val title: String) { TODAY("День"), FOOD("Питание"), BODY("Активность"), MEDS("Лекарства"), CYCLE("Цикл"), STATS("Статистика"), PROFILE("Профиль") }
+internal enum class HView(val title: String) { TODAY("День"), FOOD("Питание"), BODY("Активность"), MEDS("Лекарства"), CYCLE("Цикл"), STATS("Статистика"), PROFILE("Профиль") }
 
 private val PROT = Color(0xFF4A6A8A)
 private val FAT = Color(0xFFC9A46A)

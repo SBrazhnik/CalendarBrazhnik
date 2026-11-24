@@ -77,6 +77,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.OutlinedButton
@@ -119,6 +120,7 @@ fun DashboardTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     if (vm.editHome) {
                         TextButton(onClick = { vm.editHome = false }) { Text("Готово", fontWeight = FontWeight.Bold) }
                     } else {
+                        IconButton(onClick = { vm.push(Screen.Search) }) { Icon(Icons.Filled.Search, "Поиск") }
                         IconButton(onClick = { vm.editHome = true }) { Icon(Icons.Filled.Edit, "Настроить Главную") }
                         Box(Modifier.padding(end = 8.dp).clip(CircleShape).clickable { vm.push(Screen.Profile) }) { Avatar(vm, 34.dp) }
                     }

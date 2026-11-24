@@ -169,6 +169,11 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
 
             Section("Защита") { LockSettings(vm) }
 
+            Section("Корзина") {
+                Text("Удалённое в любом модуле хранится 30 дней — можно вернуть.", style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(onClick = { vm.push(app.calstats.Screen.Trash) }, modifier = Modifier.fillMaxWidth()) { Text("Открыть корзину") }
+            }
+
             Section("Модули") {
                 Text(
                     "Включено: " + vm.enabledModules.joinToString(", ") { it.title },
@@ -472,7 +477,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
 
 private val SETTINGS_TABS = listOf("Общие", "Уведомления", "Календарь", "Резервные копии")
 private val SECTION_TAB = mapOf(
-    "Модули" to 0, "Защита" to 0, "Синхронизация с Google" to 2, "Какие календари считать" to 2, "Подсчёт" to 2,
+    "Модули" to 0, "Защита" to 0, "Корзина" to 0, "Синхронизация с Google" to 2, "Какие календари считать" to 2, "Подсчёт" to 2,
     "Даты из модулей в календаре" to 2, "Уведомления" to 1, "Учёт алкоголя" to 1, "Резервная копия" to 3,
 )
 private val LocalSettingsTab = androidx.compose.runtime.compositionLocalOf { 0 }
