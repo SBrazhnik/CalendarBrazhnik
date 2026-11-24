@@ -1060,7 +1060,6 @@ private fun CheckRow(d: CheckDraft, onDelete: () -> Unit, onEnter: () -> Unit) {
 
 // ======================= УМНЫЕ ФУНКЦИИ =======================
 
-private val LANGS = listOf("en" to "Английский", "ru" to "Русский", "de" to "Немецкий", "fr" to "Французский", "es" to "Испанский", "it" to "Итальянский", "tr" to "Турецкий", "zh" to "Китайский")
 
 /** Навести порядок: пробелы, заглавные буквы, маркеры, лишние пустые строки. */
 fun tidyText(s: String): String {
@@ -1091,18 +1090,19 @@ private fun SmartDialog(vm: MainViewModel, id: String, rs: RichState, title: () 
     }
     val todos = remember(text) { text.lines().map { it.trim() }.filter { it.startsWith("☐ ") || it.startsWith("• ") }.map { it.drop(2).trim() }.filter { it.isNotBlank() } }
 
-    fun translate(target: String) {
-        busy = "Определяю язык и загружаю переводчик (первый раз — модель ~30 МБ)…"
+    /** Перевод — системным переводчиком (Google Переводчик / Samsung), без лишних мегабайт в приложении. */
+    fun translate() {
         val src = rs.selectedOrAll().ifBlank { text }
-        com.google.mlkit.nl.languageid.LanguageIdentification.getClient().identifyLanguage(src).addOnSuccessListener { lang ->
-            val from = com.google.mlkit.nl.translate.TranslateLanguage.fromLanguageTag(if (lang == "und") (if (target == "ru") "en" else "ru") else lang)
-            val to = com.google.mlkit.nl.translate.TranslateLanguage.fromLanguageTag(target)
-            if (from == null || to == null || from == to) { busy = null; result = src; vm.message = if (from == to) "Текст уже на этом языке" else "Язык не поддерживается"; return@addOnSuccessListener }
-            val tr = com.google.mlkit.nl.translate.Translation.getClient(com.google.mlkit.nl.translate.TranslatorOptions.Builder().setSourceLanguage(from).setTargetLanguage(to).build())
-            tr.downloadModelIfNeeded(com.google.mlkit.common.model.DownloadConditions.Builder().build())
-                .addOnSuccessListener { tr.translate(src).addOnSuccessListener { out -> busy = null; result = out; mode = "result" }.addOnFailureListener { busy = null; vm.message = "Не удалось перевести" } }
-                .addOnFailureListener { busy = null; vm.message = "Нет интернета для загрузки языка" }
-        }.addOnFailureListener { busy = null; vm.message = "Не удалось определить язык" }
+        val pm = ctx.packageManager
+        val tries = listOf(
+            Intent("android.intent.action.TRANSLATE").putExtra(Intent.EXTRA_TEXT, src),
+            Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, src).setPackage("com.google.android.apps.translate"),
+            Intent(Intent.ACTION_PROCESS_TEXT).setType("text/plain").putExtra(Intent.EXTRA_PROCESS_TEXT, src).putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true),
+        )
+        val i = tries.firstOrNull { it.resolveActivity(pm) != null }
+        if (i == null) { vm.message = "Установите Google Переводчик — перевод откроется в нём"; return }
+        runCatching { ctx.startActivity(if (i.action == Intent.ACTION_PROCESS_TEXT) Intent.createChooser(i, "Перевести") else i) }
+        onDismiss()
     }
 
     AlertDialog(
@@ -1122,7 +1122,7 @@ private fun SmartDialog(vm: MainViewModel, id: String, rs: RichState, title: () 
                         Item("🧹 Навести порядок", "Заглавные буквы, пробелы, «-» → маркеры, лишние пустые строки") {
                             val t = tidyText(text); if (t == text) vm.message = "Уже аккуратно" else { onReplace(t); vm.message = "Готово ✓" }; onDismiss()
                         }
-                        Item("🌐 Перевести", "Без интернета после загрузки языка. Выделите часть текста — переведётся только она") { mode = "translate" }
+                        Item("🌐 Перевести", "Откроется переводчик телефона. Выделите часть текста — переведётся только она") { translate() }
                         Item("⏰ Напоминания из дат в тексте", if (dated.isEmpty()) "Дат в тексте не нашёл: пишите «до пятницы», «25.11 в 15:00»" else "Найдено: ${dated.size}") { if (dated.isNotEmpty()) mode = "dates" }
                         Item("✅ Пункты → в «Задачи»", if (todos.isEmpty()) "Нет пунктов «☐» или «•»" else "Поручения с совещания станут задачами: ${todos.size}") {
                             if (todos.isEmpty()) return@Item
@@ -1144,9 +1144,6 @@ private fun SmartDialog(vm: MainViewModel, id: String, rs: RichState, title: () 
                             (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("note", text)); onDismiss()
                         }
                         Item("🔤 Орфография", "Подчёркивает ошибки клавиатура Samsung/Google прямо при наборе — нажмите на слово, чтобы исправить") { onDismiss() }
-                    }
-                    "translate" -> LANGS.forEach { (code, name) ->
-                        Text(name, Modifier.fillMaxWidth().clickable { translate(code) }.padding(vertical = 10.dp), style = MaterialTheme.typography.bodyLarge)
                     }
                     "dates" -> {
                         Text("Каждая строка станет отдельным напоминанием в «⏰ Напоминания»:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
