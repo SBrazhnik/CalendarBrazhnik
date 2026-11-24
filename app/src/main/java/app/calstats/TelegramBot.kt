@@ -64,8 +64,27 @@ class TelegramBot(ctx: Context) {
         val ups = updates(st.token, prefs.getLong("offset", 0))
         val chat = ups.lastOrNull { it.chatId != 0L }?.chatId ?: return@withContext false
         prefs.edit().putLong("chat", chat).putLong("offset", ups.last().id + 1).apply()
-        send("✅ «Зелёный ритм» подключён. Сюда будут приходить напоминания и сводка.\n\n" + HELP)
+        setupMenu()
+        send("✅ «Зелёный ритм» подключён. Сюда будут приходить напоминания и сводка.\n\n" + BotBrain.HELP, keyboard = true)
         true
+    }
+
+    /** Меню команд у кнопки «Меню» в Telegram. */
+    suspend fun setupMenu() = withContext(Dispatchers.IO) {
+        val st = state()
+        if (!st.hasToken) return@withContext
+        val cmds = BotBrain.COMMANDS.joinToString(",", "[", "]") { (c, d) -> """{"command":"$c","description":"$d"}""" }
+        runCatching { post(st.token, "setMyCommands", "commands=" + URLEncoder.encode(cmds, "UTF-8")) }
+    }
+
+    /** Долгое ожидание сообщений (до timeout секунд): ответ приходит сразу, как пользователь написал. */
+    suspend fun poll(timeout: Int): List<String> = withContext(Dispatchers.IO) {
+        val st = state()
+        if (!st.connected) return@withContext emptyList()
+        val ups = updates(st.token, prefs.getLong("offset", 0), timeout)
+        if (ups.isEmpty()) return@withContext emptyList()
+        prefs.edit().putLong("offset", ups.last().id + 1).apply()
+        ups.filter { it.chatId == st.chatId && it.text.isNotBlank() }.map { it.text }
     }
 
     /** Новые сообщения из чата пользователя. */
@@ -75,22 +94,30 @@ class TelegramBot(ctx: Context) {
         val ups = updates(st.token, prefs.getLong("offset", 0))
         if (ups.isEmpty()) return@withContext emptyList()
         prefs.edit().putLong("offset", ups.last().id + 1).apply()
-        ups.filter { it.chatId == st.chatId && !it.text.startsWith("/start") && !it.text.startsWith("/help") }.map { it.text }
+        ups.filter { it.chatId == st.chatId && it.text.isNotBlank() }.map { it.text }
     }
 
-    suspend fun send(text: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun send(text: String, keyboard: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         val st = state()
         if (!st.connected) return@withContext false
         runCatching {
-            call(st.token, "sendMessage", "chat_id=${st.chatId}&text=" + URLEncoder.encode(text.take(4000), "UTF-8"))
+            var body = "chat_id=${st.chatId}&text=" + URLEncoder.encode(text.take(4000), "UTF-8") + "&disable_web_page_preview=true"
+            if (keyboard) body += "&reply_markup=" + URLEncoder.encode(BotBrain.KEYBOARD, "UTF-8")
+            post(st.token, "sendMessage", body)
             true
         }.getOrDefault(false)
     }
 
+    /** «Печатает…» — пока бот готовит ответ. */
+    suspend fun typing() = withContext(Dispatchers.IO) {
+        val st = state()
+        if (st.connected) runCatching { post(st.token, "sendChatAction", "chat_id=${st.chatId}&action=typing") }
+    }
+
     private data class Update(val id: Long, val chatId: Long, val text: String)
 
-    private fun updates(token: String, offset: Long): List<Update> {
-        val o = call(token, "getUpdates", "offset=$offset&timeout=0&allowed_updates=%5B%22message%22%5D")
+    private fun updates(token: String, offset: Long, timeout: Int = 0): List<Update> {
+        val o = call(token, "getUpdates", "offset=$offset&timeout=$timeout&allowed_updates=%5B%22message%22%5D", readTimeout = (timeout + 15) * 1000)
         return (o["result"] as? JsonArray).orEmpty().mapNotNull { e ->
             val u = e.jsonObject
             val id = (u["update_id"] as? JsonPrimitive)?.longOrNull ?: return@mapNotNull null
@@ -100,10 +127,24 @@ class TelegramBot(ctx: Context) {
         }
     }
 
-    private fun call(token: String, method: String, query: String = ""): JsonObject {
+    private fun post(token: String, method: String, body: String): JsonObject {
+        val c = URL("https://api.telegram.org/bot$token/$method").openConnection() as HttpURLConnection
+        c.connectTimeout = 10_000; c.readTimeout = 15_000
+        c.requestMethod = "POST"; c.doOutput = true
+        c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+        try {
+            c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val ok = c.responseCode in 200..299
+            val txt = (if (ok) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (!ok) error("Telegram: ${c.responseCode}")
+            return Json.parseToJsonElement(txt).jsonObject
+        } finally { c.disconnect() }
+    }
+
+    private fun call(token: String, method: String, query: String = "", readTimeout: Int = 15_000): JsonObject {
         val c = URL("https://api.telegram.org/bot$token/$method" + if (query.isEmpty()) "" else "?$query").openConnection() as HttpURLConnection
         c.connectTimeout = 10_000
-        c.readTimeout = 15_000
+        c.readTimeout = readTimeout
         try {
             val ok = c.responseCode in 200..299
             val body = (if (ok) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -118,7 +159,8 @@ class TelegramBot(ctx: Context) {
     data class Command(val kind: Kind, val text: String, val amount: Long = 0)
 
     companion object {
-        const val HELP = "Что можно прислать:\n" +
+        val HELP get() = BotBrain.HELP
+        const val HELP_OLD = "Что можно прислать:\n" +
             "• задача Позвонить в банк — новая задача\n" +
             "• трата 350 кофе — расход в Финансы\n" +
             "• выпил 2 стакана воды, вес 82,5, настроение 4\n" +

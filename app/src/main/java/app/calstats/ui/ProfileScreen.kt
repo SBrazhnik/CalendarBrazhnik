@@ -350,16 +350,30 @@ fun TelegramCard(vm: MainViewModel) {
         when {
             st.connected -> {
                 Text("✅ Подключён: @${st.botName}", style = MaterialTheme.typography.bodyMedium)
+                var live by remember { mutableStateOf(app.calstats.TelegramService.enabled(ctx)) }
+                SwitchRow("⚡ Бот на связи", "Отвечает за 1–2 секунды, даже когда приложение закрыто. В шторке будет тихое уведомление", live) { on ->
+                    live = on
+                    app.calstats.TelegramService.setEnabled(ctx, on)
+                    if (on) {
+                        // Samsung усыпляет фоновую работу — просим не экономить батарею на приложении
+                        val pm = ctx.getSystemService(android.os.PowerManager::class.java)
+                        if (pm?.isIgnoringBatteryOptimizations(ctx.packageName) == false) runCatching {
+                            ctx.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:" + ctx.packageName)))
+                        }
+                        vm.message = "Бот на связи. Напишите ему «что сегодня?»"
+                    }
+                }
+                if (!live) Text("Без этого бот отвечает, только когда вы открываете приложение.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 SwitchRow("Утренняя сводка", "Каждый день в 10:00: задачи, сроки, списания", st.daily) { vm.telegram.setFlag("daily", it); vm.refreshTelegram() }
                 SwitchRow("Напоминания", "Документы, подписки, пробные периоды", st.reminders) { vm.telegram.setFlag("reminders", it); vm.refreshTelegram() }
                 SwitchRow("Новые версии", "Сообщить о выходе обновления", st.updates) { vm.telegram.setFlag("updates", it); vm.refreshTelegram() }
-                SwitchRow("Принимать сообщения", "Текст боту → заметка, «задача …», «трата 350 кофе»", st.inbox) { vm.telegram.setFlag("inbox", it); vm.refreshTelegram() }
+                SwitchRow("Принимать сообщения", "Кнопки меню, вопросы («сколько потратил?»), записи («кофе 250», «купить хлеб»)", st.inbox) { vm.telegram.setFlag("inbox", it); vm.refreshTelegram() }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
-                        scope.launch { vm.message = if (vm.telegram.send("👋 Проверка связи из «Зелёного ритма»")) "Отправлено" else "Не удалось отправить" }
-                    }) { Text("Проверить") }
+                        scope.launch { vm.telegram.setupMenu(); vm.message = if (vm.telegram.send("👋 Проверка связи. Меню — кнопки внизу и «/» слева.\n\n" + app.calstats.BotBrain.HELP, keyboard = true)) "Отправлено — в боте появилось меню" else "Не удалось отправить" }
+                    }) { Text("Проверить и показать меню") }
                     OutlinedButton(onClick = { openUrl(ctx, "https://t.me/${st.botName}") }) { Text("Открыть бот") }
-                    TextButton(onClick = { vm.telegram.disconnect(); vm.refreshTelegram() }) { Text("Отключить", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { app.calstats.TelegramService.setEnabled(ctx, false); vm.telegram.disconnect(); vm.refreshTelegram() }) { Text("Отключить", color = MaterialTheme.colorScheme.error) }
                 }
             }
             st.hasToken -> {

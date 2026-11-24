@@ -523,37 +523,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshTelegram() { telegramState = telegram.state() }
 
     /** Забрать сообщения, присланные боту: «задача …», «заметка …», «трата 350 кофе», просто текст — в заметки. */
+    /** Данные для бота, пока приложение открыто. */
+    val botAccess = object : BotBrain.Access {
+        override suspend fun get() = withContext(Dispatchers.Main) { work }
+        override suspend fun update(f: (Workspace) -> Workspace) = withContext(Dispatchers.Main) { updateWork(f) }
+    }
+
+    /** Без «бота на связи» сообщения забираются при открытии приложения — и бот сразу отвечает. */
     fun pullTelegram() {
+        TelegramService.access = botAccess
+        if (TelegramService.enabled(getApplication())) { TelegramService.start(getApplication()); return }
         if (!telegramState.connected || !telegramState.inbox) return
         viewModelScope.launch {
             val msgs = runCatching { telegram.pull() }.getOrDefault(emptyList())
             if (msgs.isEmpty()) return@launch
-            var n = 0
             msgs.forEach { m ->
-                val cmd = TelegramBot.parseCommand(m)
-                // «выпил 2 стакана воды», «кофе 250 руб», «купить хлеб», «вес 80» — тот же разбор, что и в быстрой записи
-                val smart = app.calstats.work.SmartInput.parse(m, java.time.LocalDateTime.now(), work.habits)
-                if (cmd.kind == TelegramBot.Kind.NOTE && smart != null && smart.kind !in setOf(
-                        app.calstats.work.SmartInput.Kind.TASK, app.calstats.work.SmartInput.Kind.EVENT, app.calstats.work.SmartInput.Kind.NOTE,
-                    ) && runCatching { applySmart(smart) }.isSuccess) { n++; return@forEach }
-                when (cmd.kind) {
-                    TelegramBot.Kind.TASK -> { incoming = SharedText(cmd.text, null, "Telegram"); saveIncomingAsTask(false) }
-                    TelegramBot.Kind.NOTE -> { incoming = SharedText(cmd.text, null, "Telegram"); saveIncomingAsNote(false) }
-                    TelegramBot.Kind.EXPENSE -> updateWork { w ->
-                        val ww = app.calstats.work.FinanceOps.ensureDefaults(w)
-                        val acc = ww.accounts.firstOrNull()?.id
-                        val cat = ww.finCategories.firstOrNull { !it.income && !it.archived }?.id
-                        if (acc == null) return@updateWork ww
-                        app.calstats.work.FinanceOps.upsertTx(ww, app.calstats.work.Transaction(
-                            id = app.calstats.work.newId(), type = app.calstats.work.TxType.EXPENSE, amount = cmd.amount,
-                            accountId = acc, categoryId = cat, date = today.toString(), note = cmd.text,
-                        ))
-                    }
-                }
-                n++
+                val reply = runCatching { BotBrain.answer(getApplication(), m, botAccess) }.getOrElse { "Ошибка: ${it.message}" }
+                telegram.send(reply, keyboard = true)
             }
-            incoming = null
-            message = "Из Telegram добавлено: $n"
+            message = "Из Telegram обработано сообщений: ${msgs.size}"
         }
     }
 
@@ -809,6 +797,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         observer?.let { resolver.unregisterContentObserver(it) }
         RecorderService.onSaved = null
+        if (TelegramService.access === botAccess) TelegramService.access = null
         // Не теряем последнее изменение, если система закрывает экран.
         runCatching { kotlinx.coroutines.runBlocking { saveLock.lock(); try { workStore.save(work) } finally { saveLock.unlock() } } }
         super.onCleared()

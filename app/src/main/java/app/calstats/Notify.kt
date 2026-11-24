@@ -188,7 +188,7 @@ object Notify {
         scheduleMeds(ctx)
     }
 
-    private fun hasCalendar(ctx: Context) =
+    fun hasCalendar(ctx: Context) =
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
 
     /** Будильники на события ближайших 26 часов. */
@@ -322,6 +322,7 @@ object Notify {
                 // «Итог дня»: приходит всегда — за минуту отметить настроение, привычки, траты и запись в дневник.
                 val lines = listOf("Нажмите — итог дня за минуту: настроение, привычки, траты, дневник") + eveningLines(ctx, today)
                 post(ctx, CH_DAY, 4502, "🌙 Итог дня", lines, Tab.HOME, quick = "checkin")
+                TelegramPush.send(ctx, "🌙 Итог дня\n\n" + eveningLines(ctx, today).joinToString("\n").ifBlank { "Всё отмечено — спокойной ночи" }, "daily")
                 scheduleAll(ctx)
             }
             ACTION_RESCAN -> scheduleEvents(ctx)
@@ -369,6 +370,7 @@ object Notify {
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 val open = PendingIntent.getActivity(ctx, nid, Intent(ctx, MainActivity::class.java).putExtra(MainActivity.EXTRA_QUICK, "note:$id")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                TelegramPush.send(ctx, "⏰ " + n.title.ifBlank { n.body.lineSequence().firstOrNull().orEmpty() }.take(100) + if (n.body.isNotBlank() && n.title.isNotBlank()) "\n" + n.body.take(500) else "")
                 val nb = NotificationCompat.Builder(ctx, CH_EVENTS)
                     .setSmallIcon(R.drawable.ic_notify).setColor(0xFF1F3A2B.toInt())
                     .setContentTitle("⏰ " + n.title.ifBlank { n.body.lineSequence().firstOrNull().orEmpty() }.take(80))

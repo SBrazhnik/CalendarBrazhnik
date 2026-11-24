@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Точное время напоминаний заметок -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Подсказка карты у магазина (включается в «Картах») -->
@@ -189,6 +191,15 @@
         <receiver
             android:name=".CardPlaceReceiver"
             android:exported="false" />
+
+        <service
+            android:name=".TelegramService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Личный Telegram-бот пользователя: ожидание сообщений и мгновенные ответы" />
+        </service>
 
         <service
             android:name=".RecorderService"
