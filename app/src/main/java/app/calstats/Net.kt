@@ -130,6 +130,39 @@ object Net {
         return out
     }
 
+    /** Курс доллара ЦБ за период: (дата начала действия, рублей за $1). */
+    fun usdRange(from: java.time.LocalDate, to: java.time.LocalDate): List<Pair<java.time.LocalDate, Double>> {
+        val f = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
+        val xml = get("https://www.cbr.ru/scripts/XML_dynamic.asp?date_req1=${from.format(f)}&date_req2=${to.format(f)}&VAL_NM_RQ=R01235", "windows-1251")
+        val df = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy")
+        return Regex("""<Record Date="([\d.]+)"[^>]*>.*?<Nominal>(\d+)</Nominal>\s*<Value>([\d,]+)</Value>""", RegexOption.DOT_MATCHES_ALL).findAll(xml).map { m ->
+            java.time.LocalDate.parse(m.groupValues[1], df) to m.groupValues[3].replace(',', '.').toDouble() / m.groupValues[2].toDouble()
+        }.toList()
+    }
+
+    /** Погода Open-Meteo по дням: прошлые дни (до 92) и прогноз на 14 дней, либо архив за период. */
+    fun weather(lat: Double, lon: Double, from: java.time.LocalDate? = null, to: java.time.LocalDate? = null): List<app.calstats.work.DayInfo> {
+        val base = if (from != null) "https://archive-api.open-meteo.com/v1/archive?start_date=$from&end_date=$to&"
+        else "https://api.open-meteo.com/v1/forecast?past_days=31&forecast_days=14&"
+        val o = JSONObject(get(base + "latitude=$lat&longitude=$lon&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto"))
+        val d = o.getJSONObject("daily")
+        val days = d.getJSONArray("time"); val mx = d.getJSONArray("temperature_2m_max"); val mn = d.getJSONArray("temperature_2m_min"); val c = d.getJSONArray("weather_code")
+        return (0 until days.length()).map { i ->
+            app.calstats.work.DayInfo(days.getString(i), mx.optDouble(i).takeIf { !it.isNaN() && !mx.isNull(i) }, mn.optDouble(i).takeIf { !it.isNaN() && !mn.isNull(i) },
+                if (c.isNull(i)) null else c.optInt(i))
+        }
+    }
+
+    /** Поиск города: название, регион, координаты. */
+    fun geocode(q: String): List<Triple<String, Double, Double>> {
+        val o = JSONObject(get("https://geocoding-api.open-meteo.com/v1/search?count=8&language=ru&name=" + java.net.URLEncoder.encode(q, "UTF-8")))
+        val a = o.optJSONArray("results") ?: return emptyList()
+        return (0 until a.length()).map { i ->
+            val r = a.getJSONObject(i)
+            Triple(listOf(r.optString("name"), r.optString("admin1"), r.optString("country")).filter { it.isNotBlank() }.distinct().joinToString(", "), r.getDouble("latitude"), r.getDouble("longitude"))
+        }
+    }
+
     /** Найденная бесплатная книга (общественное достояние). */
     data class FreeBook(val source: String, val id: String, val title: String, val authors: String, val lang: String, val url: String, val fmt: String)
 

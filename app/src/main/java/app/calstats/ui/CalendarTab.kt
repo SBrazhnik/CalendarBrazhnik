@@ -66,6 +66,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -106,6 +107,8 @@ fun CalendarTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     }
     var moreMenu by remember { mutableStateOf(false) }
     val d = vm.selectedDate
+    // Погода и курс: обновляем при открытии и при переходе на другой месяц
+    LaunchedEffect(java.time.YearMonth.from(d)) { runCatching { DayInfoSync.refresh(ctx, vm, java.time.YearMonth.from(d)) } }
     val title = Fmt.monthName(d.monthValue) + if (d.year != vm.today.year) " ${d.year}" else ""
     val collapsed = vm.monthCollapsed
 
@@ -277,6 +280,7 @@ private fun DayList(vm: MainViewModel, date: LocalDate, events: List<EventInstan
                 )
             }
         }
+        item(key = "dayinfo") { DayInfoCard(vm, date) }
         if (!date.isAfter(vm.today)) {
             item(key = "drink") {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) { DrinkRow(vm, date, divider = false) }
