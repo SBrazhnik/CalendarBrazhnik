@@ -587,7 +587,7 @@ private fun MediumTile(vm: MainViewModel, t: Tab, modifier: Modifier) {
         Column(Modifier.fillMaxWidth().padding(18.dp)) {
             CardTitle(t)
             Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                 // Длинное число (например, сумма за месяц) уменьшается, а не обрезается
                 FitText(
                     info.value,
@@ -700,10 +700,11 @@ private fun TasksSummary(vm: MainViewModel) {
 }
 
 @Composable
-private fun MiniNumber(value: String, label: String, color: Color? = null) {
-    Column {
-        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color ?: MaterialTheme.colorScheme.onSurface)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun androidx.compose.foundation.layout.RowScope.MiniNumber(value: String, label: String, color: Color? = null) {
+    // Колонки делят ширину поровну, длинная сумма уменьшается и не обрезается
+    Column(Modifier.weight(1f)) {
+        FitText(value, MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color ?: MaterialTheme.colorScheme.onSurface, minSp = 12f)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
     }
 }
 
@@ -986,7 +987,8 @@ private fun FitText(
     Text(
         text, modifier.drawWithContent { if (ready) drawContent() }, color = color, fontWeight = fontWeight,
         style = style.copy(fontSize = size, lineHeight = if (style.lineHeight.isSp && style.fontSize.isSp) (style.lineHeight.value * size.value / style.fontSize.value).sp else style.lineHeight),
-        maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
-        onTextLayout = { r -> if (r.didOverflowWidth && size.isSp && size.value > minSp) size = maxOf(minSp, size.value * 0.9f).sp else ready = true },
+        // Clip, а не Ellipsis: иначе текст сразу обрезается «…» и переполнение не видно
+        maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
+        onTextLayout = { r -> if ((r.didOverflowWidth || r.hasVisualOverflow) && size.isSp && size.value > minSp) size = maxOf(minSp, size.value * 0.92f).sp else ready = true },
     )
 }
