@@ -76,7 +76,7 @@ fun AnalysisTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             TopAppBar(
                 navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = { Text("Анализ", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Анализ", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 actions = {
                     IconButton(onClick = { vm.syncNow() }) { Icon(Icons.Filled.Refresh, "Синхронизировать") }
                     IconButton(onClick = { vm.push(Screen.Colors) }) { Icon(Icons.Filled.Edit, "Названия направлений") }

@@ -135,7 +135,7 @@ fun DocsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             TopAppBar(
                 navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = { Text("Документы", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Документы", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
             )
         },
         floatingActionButton = {

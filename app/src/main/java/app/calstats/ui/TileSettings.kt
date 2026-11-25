@@ -3,6 +3,8 @@
 package app.calstats.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -45,20 +47,22 @@ val FIN_SECTIONS = listOf("spent" to "Траты сегодня и за меся
 @Composable
 fun TileSettingsSheet(vm: MainViewModel, t: Tab) {
     ModalBottomSheet(onDismissRequest = { vm.tileSettings = null }) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ModuleBadge(t, 34.dp)
                 Spacer(Modifier.width(12.dp))
                 Text(t.title, style = MaterialTheme.typography.titleLarge)
             }
             Text("Размер", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 TileSize.entries.forEach { z ->
                     FilterChip(selected = vm.tileSize(t) == z, onClick = { vm.setTileSize(t, z) }, label = {
-                        Text(when (z) { TileSize.SMALL -> "Маленькая · 3 в ряд"; TileSize.MEDIUM -> "Средняя · 2 в ряд"; TileSize.LARGE -> "Большая" })
+                        Text(when (z) { TileSize.SMALL -> "Маленькая"; TileSize.MEDIUM -> "Средняя"; TileSize.LARGE -> "Большая" }, maxLines = 1)
                     })
                 }
             }
+            Text(when (vm.tileSize(t)) { TileSize.SMALL -> "3 плитки в ряд: только главное число"; TileSize.MEDIUM -> "2 в ряд: число, подпись и строка подробностей"; TileSize.LARGE -> "Во всю ширину: подробная сводка" },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TILE_VARIANTS[t]?.let { vars ->
                 Text(if (vm.tileSize(t) == TileSize.LARGE && t == Tab.FINANCE) "Что показывать в маленькой и средней плитке" else "Что показывать", style = MaterialTheme.typography.labelLarge)
                 val cur = vm.tileVariant(t) ?: vars.first().first
@@ -69,9 +73,9 @@ fun TileSettingsSheet(vm: MainViewModel, t: Tab) {
             if (t == Tab.FINANCE) {
                 Text("Блоки большой карточки", style = MaterialTheme.typography.labelLarge)
                 FIN_SECTIONS.forEach { (k, title) ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(k in vm.finSections, { vm.toggleFinSection(k) })
-                        Text(title)
+                        Text(title, Modifier.weight(1f))
                     }
                 }
             }

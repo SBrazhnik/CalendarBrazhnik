@@ -111,7 +111,7 @@ fun MoneyTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             TopAppBar(
                 navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = { Text("Расходы", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Расходы", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 actions = {
                     IconButton(onClick = { vm.push(Screen.People) }) { Icon(painterResource(R.drawable.ic_group), "Люди и группы") }
                 },

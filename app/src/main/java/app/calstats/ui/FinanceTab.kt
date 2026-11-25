@@ -172,7 +172,7 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             TopAppBar(
                 navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = { Text("Финансы", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Финансы", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 actions = {
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Ещё") }

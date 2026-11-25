@@ -76,7 +76,7 @@ fun WhatsNewDialog(vm: MainViewModel) {
     }
     AlertDialog(
         onDismissRequest = { close() },
-        title = { Text("Что нового", style = MaterialTheme.typography.headlineSmall) },
+        title = { Text("Что нового", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 list.take(3).forEach { e -> ChangeEntry(e) }
@@ -107,7 +107,7 @@ fun AboutScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = { Text("О приложении", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("О приложении", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = { vm.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") } },
             )
         },

@@ -119,7 +119,7 @@ fun WishesTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             TopAppBar(
                 navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = { Text("Желания", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Желания", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
             )
         },
         floatingActionButton = {

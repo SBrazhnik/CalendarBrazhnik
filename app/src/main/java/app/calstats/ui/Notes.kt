@@ -245,7 +245,7 @@ fun NotesTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 title = {
                     if (search) OutlinedTextField(query, { query = it }, placeholder = { Text("Поиск в заметках") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    else Text(if (archive) "Архив заметок" else "Заметки", style = MaterialTheme.typography.headlineSmall)
+                    else Text(if (archive) "Архив заметок" else "Заметки", style = MaterialTheme.typography.titleLarge, maxLines = 1)
                 },
                 actions = {
                     IconButton(onClick = { search = !search; if (!search) query = "" }) { Icon(if (search) Icons.Filled.Close else Icons.Filled.Search, "Поиск") }

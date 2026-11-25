@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -326,16 +327,15 @@ private fun SmallTile(vm: MainViewModel, t: Tab, modifier: Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CardIcon(t, 16.dp)
                 Spacer(Modifier.width(6.dp))
-                Text(t.title, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                FitText(t.title, MaterialTheme.typography.labelMedium, minSp = 9f)
             }
             Spacer(Modifier.height(8.dp))
             Spacer(Modifier.weight(1f))
-            Text(
+            FitText(
                 info.value,
-                style = MaterialTheme.typography.displaySmall.copy(fontSize = 26.sp, lineHeight = 28.sp),
+                MaterialTheme.typography.displaySmall.copy(fontSize = 26.sp, lineHeight = 28.sp),
                 color = if (info.alert) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                minSp = 13f,
             )
             Text(info.unit, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (vm.editHome) TileControls(vm, t)
@@ -357,7 +357,7 @@ private fun CardTitle(t: Tab, trailing: String? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         CardIcon(t, 18.dp)
         Spacer(Modifier.width(8.dp))
-        Text(t.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1)
+        FitText(t.title, MaterialTheme.typography.titleSmall, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, minSp = 11f)
         if (trailing != null) Text(trailing, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
 }
@@ -588,13 +588,13 @@ private fun MediumTile(vm: MainViewModel, t: Tab, modifier: Modifier) {
             CardTitle(t)
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(
+                // Длинное число (например, сумма за месяц) уменьшается, а не обрезается
+                FitText(
                     info.value,
-                    style = MaterialTheme.typography.displaySmall,
+                    MaterialTheme.typography.displaySmall,
+                    Modifier.weight(1f, fill = false),
                     color = if (info.alert) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    minSp = 16f,
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(info.unit, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -608,7 +608,7 @@ private fun MediumTile(vm: MainViewModel, t: Tab, modifier: Modifier) {
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Text(info.caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(info.caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (vm.editHome) TileControls(vm, t)
         }
     }
@@ -973,4 +973,20 @@ private fun FinanceSummary(vm: MainViewModel) {
             }
         }
     }
+}
+
+/** Текст в одну строку, который уменьшается, пока не поместится по ширине (вместо «31…»). */
+@Composable
+private fun FitText(
+    text: String, style: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier,
+    color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified, fontWeight: FontWeight? = null, minSp: Float = 12f,
+) {
+    var size by remember(text, style) { mutableStateOf(style.fontSize) }
+    var ready by remember(text, style) { mutableStateOf(false) }
+    Text(
+        text, modifier.drawWithContent { if (ready) drawContent() }, color = color, fontWeight = fontWeight,
+        style = style.copy(fontSize = size, lineHeight = if (style.lineHeight.isSp && style.fontSize.isSp) (style.lineHeight.value * size.value / style.fontSize.value).sp else style.lineHeight),
+        maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+        onTextLayout = { r -> if (r.didOverflowWidth && size.isSp && size.value > minSp) size = maxOf(minSp, size.value * 0.9f).sp else ready = true },
+    )
 }

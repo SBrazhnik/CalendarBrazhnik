@@ -327,9 +327,14 @@ private fun NewRequestDialog(vm: MainViewModel, onDismiss: () -> Unit, onCreated
                     DevRequests.Kind.entries.forEach { k -> FilterChip(kind == k, { kind = k }, label = { Text("${k.emoji} ${k.title}") }) }
                 }
                 Text("Модуль", style = MaterialTheme.typography.labelLarge)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(module == null, { module = null }, label = { Text("Всё приложение") })
-                    Tab.modules.filter { it != Tab.DEV }.forEach { t -> FilterChip(module == t.title, { module = t.title }, label = { Text(t.title) }) }
+                // Все разделы видны сразу, без прокрутки вбок
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    (listOf("Всё приложение", "Главная", "Настройки", "Профиль", "Меню и модули", "Поиск", "Корзина", "Уведомления", "Виджеты",
+                        "Резервная копия", "Пароль и отпечаток", "Быстрый ввод", "Telegram-бот", "Обновления") + Tab.modules.filter { it != Tab.DEV }.map { it.title })
+                        .distinct().forEach { name ->
+                            val sel = if (name == "Всё приложение") module == null else module == name
+                            FilterChip(sel, { module = if (name == "Всё приложение") null else name }, label = { Text(name) })
+                        }
                 }
                 OutlinedTextField(title, { title = it }, Modifier.fillMaxWidth(), label = { Text("Коротко, о чём") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))

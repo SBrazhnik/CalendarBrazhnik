@@ -93,7 +93,7 @@ fun SettingsScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Настройки", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Настройки", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = { vm.pop() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
                 },

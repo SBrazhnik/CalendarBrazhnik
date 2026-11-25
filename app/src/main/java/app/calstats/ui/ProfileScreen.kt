@@ -202,7 +202,7 @@ fun ProfileScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = { Text("Профиль", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Профиль", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = {
                         vm.updateWork { it.copy(meName = name.trim().ifBlank { "Я" }) }
@@ -483,7 +483,7 @@ fun AccountsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             TopAppBar(
                 navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = { Text("Подключения", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Подключения", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },

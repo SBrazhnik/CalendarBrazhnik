@@ -133,7 +133,7 @@ fun HealthTab(vm: MainViewModel, snackbar: SnackbarHostState) {
             TopAppBar(
                 navigationIcon = { MenuButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                title = { Text("Здоровье", style = MaterialTheme.typography.headlineSmall) },
+                title = { Text("Здоровье", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 actions = {
                     if (vm.healthGranted > 0) {
                         IconButton(onClick = { vm.refreshHealth(true) }) {
