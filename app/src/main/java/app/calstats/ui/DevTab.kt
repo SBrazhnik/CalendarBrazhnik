@@ -318,11 +318,22 @@ private fun NewRequestDialog(vm: MainViewModel, onDismiss: () -> Unit, onCreated
     var err by remember { mutableStateOf<String?>(null) }
     Dialog(onDismissRequest = { if (!busy) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().systemBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
+                // Кнопка «Отправить» закреплена сверху и не уезжает вместе с клавиатурой
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onDismiss, enabled = !busy) { Text("✕") }
-                    Text("Новый запрос", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                    Text("Новый запрос", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, maxLines = 1)
+                    Button(enabled = !busy && title.isNotBlank() && text.isNotBlank(), onClick = {
+                        busy = true; err = null
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) { runCatching { DevRequests.create(ctx, kind, module, title.trim(), text, photos) } }
+                            busy = false
+                            r.onSuccess { onCreated(it) }.onFailure { err = "Не отправилось: " + (it.message ?: app.calstats.Net.why(it)) + ". Текст сохранён — попробуйте ещё раз." }
+                        }
+                    }) { if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Отправить") }
                 }
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    err?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     DevRequests.Kind.entries.forEach { k -> FilterChip(kind == k, { kind = k }, label = { Text("${k.emoji} ${k.title}") }) }
                 }
@@ -343,15 +354,9 @@ private fun NewRequestDialog(vm: MainViewModel, onDismiss: () -> Unit, onCreated
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                 PhotoPicker(photos) { photos = it }
                 Text("К запросу автоматически добавятся версия приложения и модель телефона.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                err?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                Button(enabled = !busy && title.isNotBlank() && text.isNotBlank(), modifier = Modifier.fillMaxWidth(), onClick = {
-                    busy = true; err = null
-                    scope.launch {
-                        val r = withContext(Dispatchers.IO) { runCatching { DevRequests.create(ctx, kind, module, title.trim(), text, photos) } }
-                        busy = false
-                        r.onSuccess { onCreated(it) }.onFailure { err = "Не отправилось: " + (it.message ?: app.calstats.Net.why(it)) + ". Текст сохранён — попробуйте ещё раз." }
-                    }
-                }) { if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Отправить") }
+                    if (title.isBlank() || text.isBlank()) Text("Заполните «Коротко, о чём» и описание — кнопка «Отправить» вверху станет активной.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }
