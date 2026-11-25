@@ -92,6 +92,7 @@ fun moduleColor(t: Tab): Color = when (t) {
     Tab.READING -> Color(0xFF6A5A8C)
     Tab.CHORES -> Color(0xFF4F7C6A)
     Tab.PLANTS -> Color(0xFF4F8A3F)
+    Tab.DEV -> Color(0xFF5A6B7A)
 }
 
 @Composable
@@ -125,6 +126,7 @@ fun ModuleIcon(t: Tab, selected: Boolean = false, size: Dp = 24.dp, tint: Color?
         Tab.READING -> Icon(painterResource(R.drawable.ic_reading), null, m, tint = c)
         Tab.CHORES -> Icon(painterResource(R.drawable.ic_chores), null, m, tint = c)
         Tab.PLANTS -> Icon(painterResource(R.drawable.ic_plant), null, m, tint = c)
+        Tab.DEV -> Icon(painterResource(R.drawable.ic_dev), null, m, tint = c)
     }
 }
 

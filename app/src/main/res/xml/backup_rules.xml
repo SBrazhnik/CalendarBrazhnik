@@ -7,5 +7,6 @@
     <exclude domain="file" path="docs/" />
     <!-- Токен Telegram-бота и копии файла данных в облако не уходят -->
     <exclude domain="sharedpref" path="telegram.xml" />
+        <exclude domain="sharedpref" path="devreq.xml" />
     <exclude domain="file" path="work.json.tmp" />
 </full-backup-content>

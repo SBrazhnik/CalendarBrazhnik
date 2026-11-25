@@ -142,6 +142,7 @@ fun HomeScreen(vm: MainViewModel, snackbar: SnackbarHostState) {
                         Tab.READING -> ReadingTab(vm, snackbar)
                         Tab.CHORES -> ChoresTab(vm, snackbar)
                         Tab.PLANTS -> PlantsTab(vm, snackbar)
+                        Tab.DEV -> DevTab(vm, snackbar)
                     }
                 }
                 vm.update?.let { UpdateBar(vm, it, Modifier.align(Alignment.BottomCenter)) }

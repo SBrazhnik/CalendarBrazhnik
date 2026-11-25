@@ -388,7 +388,7 @@ private fun LargeCard(vm: MainViewModel, t: Tab) {
         Tab.WISHES -> WishesSummary(vm)
         Tab.NOTES -> NotesSummary(vm)
         Tab.ACCOUNTS, Tab.GUIDE, Tab.SHOPPING, Tab.CARDS, Tab.GOALS, Tab.JOURNAL, Tab.CAR, Tab.HOME_UTIL, Tab.PETS,
-        Tab.MEALS, Tab.WORKOUTS, Tab.TRIPS, Tab.READING, Tab.CHORES, Tab.PLANTS -> MediumTile(vm, t, Modifier.fillMaxWidth())
+        Tab.MEALS, Tab.WORKOUTS, Tab.TRIPS, Tab.READING, Tab.CHORES, Tab.PLANTS, Tab.DEV -> MediumTile(vm, t, Modifier.fillMaxWidth())
         Tab.HOME -> {}
     }
 }
@@ -568,6 +568,12 @@ private fun tileInfo(vm: MainViewModel, t: Tab): TileInfo {
         Tab.PLANTS -> {
             val due = w.plants.count { it.waterIn(today) <= 0 }
             TileInfo("$due", "полить", if (w.plants.isEmpty()) "добавьте растения" else if (due == 0) "все политы ✓" else w.plants.filter { it.waterIn(today) <= 0 }.joinToString { it.name }, alert = due > 0)
+        }
+        Tab.DEV -> {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val c = remember(vm.work) { app.calstats.DevRequests.cached(ctx) }
+            val fresh = remember(c) { app.calstats.DevRequests.unread(ctx) }
+            TileInfo("${c.count { it.open }}", "открыто", if (fresh > 0) "💬 новых ответов: $fresh" else "🔒 запросы разработчику", alert = fresh > 0)
         }
         Tab.HOME -> TileInfo("", "", "")
     }

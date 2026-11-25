@@ -82,6 +82,7 @@ enum class Tab(val title: String, val description: String) {
     READING("Чтение", "Книги и курсы: прогресс, цель на год, серия дней"),
     CHORES("Дела по дому", "Уборка и регулярные дела по графику, очередь в семье"),
     PLANTS("Растения", "Полив и подкормка по расписанию"),
+    DEV("Доработка", "Идеи, ошибки и вопросы разработчику — с ответами. Свой пароль"),
     ;
 
     val isModule: Boolean get() = this != HOME
@@ -221,6 +222,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (!uiPrefs.getBoolean("migr_extra6", false)) {
                 r = r + listOf(Tab.MEALS, Tab.WORKOUTS, Tab.TRIPS, Tab.READING, Tab.CHORES, Tab.PLANTS)
                 uiPrefs.edit().putBoolean("migr_extra6", true).putString("modules_disabled", r.joinToString(",") { it.name }).apply()
+            }
+            // «Доработка» — для владельца приложения, включается в «Модулях»
+            if (!uiPrefs.getBoolean("migr_dev", false)) {
+                r = r + Tab.DEV
+                uiPrefs.edit().putBoolean("migr_dev", true).putString("modules_disabled", r.joinToString(",") { it.name }).apply()
             }
             r
         },
