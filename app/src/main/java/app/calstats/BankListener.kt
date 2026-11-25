@@ -41,8 +41,13 @@ object BankQueue {
     @Synchronized
     fun list(ctx: Context): List<PendingTx> = runCatching { json.decodeFromString<List<PendingTx>>(p(ctx).getString("q", "[]")!!) }.getOrDefault(emptyList())
 
+    /** Банки и карты, от которых уже приходили операции: «Сбер|1234». */
+    fun seen(ctx: Context): Set<String> = ctx.getSharedPreferences("bank_map", Context.MODE_PRIVATE).getStringSet("seen", emptySet()) ?: emptySet()
+
     @Synchronized
     fun add(ctx: Context, t: PendingTx) {
+        val m = ctx.getSharedPreferences("bank_map", Context.MODE_PRIVATE)
+        m.edit().putStringSet("seen", seen(ctx) + "${t.bank}|${t.card}").apply()
         val cur = list(ctx)
         // одна и та же операция часто приходит дважды (обновление уведомления)
         if (cur.any { it.id == t.id || (it.amount == t.amount && it.merchant == t.merchant && it.date == t.date && it.income == t.income) }) return

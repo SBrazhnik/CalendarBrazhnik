@@ -133,6 +133,7 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var txSheet by remember { mutableStateOf<Transaction?>(null) }
     var accountDialog by remember { mutableStateOf<Account?>(null) }
     var menu by remember { mutableStateOf(false) }
+    var banks by remember { mutableStateOf(false) }
     var importRows by remember { mutableStateOf<List<BankImport.Row>?>(null) }
     var debtDialog by remember { mutableStateOf<app.calstats.work.Debt?>(null) }
     var debtSheet by remember { mutableStateOf<String?>(null) }
@@ -166,6 +167,8 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         txSheet = Transaction(newId(), type, 0, acc.id, date = vm.today.toString())
     }
 
+    if (banks) BanksScreen(vm, onImport = { banks = false; importer.launch(arrayOf("text/*", "text/csv", "text/comma-separated-values", "application/octet-stream", "application/vnd.ms-excel")) }) { banks = false }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -177,6 +180,7 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "Ещё") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(text = { Text("🏦 Банки: автоучёт операций") }, onClick = { menu = false; banks = true })
                             DropdownMenuItem(text = { Text("🧾 Сканировать QR-код чека") }, onClick = { menu = false; vm.scanReceipt(ctx) })
                             DropdownMenuItem(text = { Text("Импорт выписки банка (CSV)") }, onClick = {
                                 menu = false

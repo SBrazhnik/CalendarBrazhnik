@@ -14,6 +14,7 @@ data class PendingTx(
     val merchant: String,
     val date: String,
     val raw: String,
+    val card: String = "",
 )
 
 /** Разбор уведомлений банковских приложений: «Покупка 350 ₽ Пятёрочка», «Пополнение +5 000 ₽» и т.п. */
@@ -33,6 +34,9 @@ object BankNotify {
     private val MONEY = Regex("([+−-]?)\\s?(\\d{1,3}(?:[\\s\\u00A0\\u202F]\\d{3})*(?:[.,]\\d{1,2})?)\\s?(?:₽|р\\b|руб|RUB|RUR)")
     private val NOISE = Regex("(?iu)(баланс|доступно|остаток|комисси)[^\\n]*")
 
+    /** Последние 4 цифры карты/счёта: «*1234», «•• 1234», «MIR-1234», «карта 1234», «счёт *1234». */
+    val CARD = Regex("(?iu)(?:[*•]+\\s?|(?:mir|visa|ecmc|mc|мир|карт[аеуы]?|сч[её]т[аеу]?)\\s*[-*•]?\\s*)(\\d{4})(?!\\d)")
+
     fun parse(pkg: String, title: String?, text: String?, date: String, id: String): PendingTx? {
         val bank = BANKS[pkg] ?: return null
         val full = listOfNotNull(title, text).joinToString(" ").replace('\n', ' ')
@@ -50,7 +54,8 @@ object BankNotify {
         val after = clean.substring(m.range.last + 1).trim().trim('.', ',', ' ', '·', '—', '-')
         val merchant = after.split(Regex("[.\\n]")).firstOrNull()?.trim()?.take(60).orEmpty()
             .ifBlank { title?.takeIf { !EXPENSE.containsMatchIn(it) && !INCOME.containsMatchIn(it) }.orEmpty() }
-        return PendingTx(id, bank, amount, income, merchant, date, full.take(300))
+        val card = CARD.find(full)?.groupValues?.get(1).orEmpty()
+        return PendingTx(id, bank, amount, income, merchant.replace(CARD, "").trim(), date, full.take(300), card)
     }
 }
 

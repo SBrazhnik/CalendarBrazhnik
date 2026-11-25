@@ -400,17 +400,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun hideBankHint() { bankHintHidden = true; uiPrefs.edit().putBoolean("bank_hint_hidden", true).apply() }
     fun refreshBank() { bankPending = BankQueue.list(getApplication()) }
     fun dropBank(ids: Set<String>) { BankQueue.remove(getApplication(), ids); refreshBank() }
-    fun acceptBank(ids: Set<String>) {
+    // ---------- Банки: куда записывать операции из уведомлений ----------
+    private val bankPrefs = app.getSharedPreferences("bank_map", android.content.Context.MODE_PRIVATE)
+    var bankAuto by mutableStateOf(bankPrefs.getBoolean("auto", false))
+        private set
+    fun changeBankAuto(on: Boolean) { bankAuto = on; bankPrefs.edit().putBoolean("auto", on).apply(); if (on) autoAcceptBank() }
+    /** Ключ: «card:1234» или «bank:Сбер» → id счёта. */
+    fun bankAccount(key: String): String? = bankPrefs.getString(key, null)
+    fun setBankAccount(key: String, accId: String?) { bankPrefs.edit().apply { if (accId == null) remove(key) else putString(key, accId) }.apply(); bankMapTick++ }
+    var bankMapTick by mutableStateOf(0)
+        private set
+    /** Сначала по номеру карты, потом по банку, иначе первый счёт. */
+    fun accountFor(t: app.calstats.work.PendingTx, w: app.calstats.work.Workspace): app.calstats.work.Account? {
+        val active = w.accounts.filter { !it.archived }
+        val id = (if (t.card.isNotBlank()) bankAccount("card:${t.card}") else null) ?: bankAccount("bank:${t.bank}")
+        return active.firstOrNull { it.id == id } ?: active.firstOrNull()
+    }
+    private fun autoAcceptBank() { if (bankAuto && bankPending.isNotEmpty() && work.accounts.any { !it.archived }) acceptBank(bankPending.map { it.id }.toSet(), quiet = true) }
+
+    fun acceptBank(ids: Set<String>, quiet: Boolean = false) {
         val list = bankPending.filter { it.id in ids }
         updateWork { w0 ->
-            var w = app.calstats.work.FinanceOps.ensureDefaults(w0)
-            val acc = w.accounts.firstOrNull { !it.archived } ?: return@updateWork w0
-            val rows = list.map { BankImport.Row(java.time.LocalDate.parse(it.date), if (it.income) it.amount else -it.amount, it.merchant.ifBlank { it.bank }, "") }
-            val txs = BankImport.toTransactions(rows, acc.id, w.finCategories, "Уведомление банка")
+            val w = app.calstats.work.FinanceOps.ensureDefaults(w0)
+            if (w.accounts.none { !it.archived }) return@updateWork w0
+            val txs = list.groupBy { accountFor(it, w)!!.id }.flatMap { (accId, items) ->
+                val rows = items.map { BankImport.Row(java.time.LocalDate.parse(it.date), if (it.income) it.amount else -it.amount, it.merchant.ifBlank { it.bank }, "") }
+                BankImport.toTransactions(rows, accId, w.finCategories, "Уведомление банка")
+            }
             w.copy(transactions = w.transactions + txs)
         }
         if (work.accounts.none { !it.archived }) message = "Сначала добавьте счёт в «Финансах»"
-        else { dropBank(ids); message = "Добавлено операций: ${list.size}" }
+        else { dropBank(ids); message = (if (quiet) "Из банков добавлено автоматически: " else "Добавлено операций: ") + list.size }
     }
     var payday by mutableStateOf(uiPrefs.getInt("payday", 0).takeIf { it > 0 })
         private set
@@ -749,6 +769,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { Notify.scheduleEvents(getApplication()) } }
         loadBirthdays()
         refreshBank()
+        autoAcceptBank()
         exportDates()
         Usage.open(getApplication())
         refreshHealth()

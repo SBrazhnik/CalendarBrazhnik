@@ -3,6 +3,11 @@
 package app.calstats.ui
 
 import android.content.Intent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
+import app.calstats.work.BankNotify
 import android.provider.Settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -77,7 +82,7 @@ fun LazyListScope.bankInbox(vm: MainViewModel) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Траты без ручного ввода", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "Приложение может замечать уведомления банков (Т-Банк, Сбер, Альфа, ВТБ и др.) и предлагать записать операцию одной кнопкой. Другие уведомления не читаются.",
+                            "Приложение может замечать уведомления банков (Т-Банк, Сбер, Альфа, ВТБ и др.) и записывать операции — с подтверждением или автоматически. Другие уведомления не читаются. Настройка — «⋮ → 🏦 Банки».",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -227,3 +232,119 @@ fun LoanSheet(vm: MainViewModel, onDismiss: () -> Unit) {
 
 @Suppress("unused")
 private val unusedTx = TxType.EXPENSE
+
+/**
+ * «Банки»: у банков РФ нет открытого доступа к счетам для сторонних приложений,
+ * поэтому операции берутся из уведомлений банковских приложений на этом телефоне и из выписок.
+ */
+@Composable
+fun BanksScreen(vm: MainViewModel, onImport: () -> Unit, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    var enabled by remember { mutableStateOf(BankQueue.enabled(ctx)) }
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) enabled = BankQueue.enabled(ctx) }
+        owner.lifecycle.addObserver(obs); onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+    val accounts = vm.work.accounts.filter { !it.archived }
+    val tick = vm.bankMapTick
+    val seen = remember(tick, vm.bankPending) { BankQueue.seen(ctx).map { it.substringBefore('|') to it.substringAfter('|') } }
+    val seenBanks = seen.map { it.first }.toSet()
+    var test by remember { mutableStateOf("") }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        androidx.compose.material3.Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().systemBarsPadding()) {
+                Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onDismiss) { Text("←") }
+                    Text("Банки", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                }
+                androidx.compose.foundation.lazy.LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Text("Банки в России не дают сторонним приложениям прямой доступ к счетам. Поэтому «Зелёный ритм» берёт операции из уведомлений банковских приложений на этом телефоне — покупки, переводы, зачисления — и записывает их в нужный счёт. Другие уведомления не читаются и никуда не отправляются.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    item {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("1. Доступ к уведомлениям", style = MaterialTheme.typography.titleSmall)
+                                Text(if (enabled) "✓ Включено" else "Выключено — найдите «Зелёный ритм» в списке и разрешите доступ",
+                                    color = if (enabled) INC else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                                if (!enabled) Button(onClick = { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }) { Text("Открыть настройки") }
+                                Text("Уведомления о покупках должны быть включены в самом банковском приложении. На Samsung также отключите для банка «Скрывать содержимое уведомлений».",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    item {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("2. Добавлять автоматически", style = MaterialTheme.typography.titleSmall)
+                                    Text(if (vm.bankAuto) "Операции записываются сами, когда вы открываете приложение" else "Операции ждут подтверждения в «Финансах»",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                androidx.compose.material3.Switch(vm.bankAuto, { vm.changeBankAuto(it) })
+                            }
+                        }
+                    }
+                    item { Text("3. Какой счёт для какого банка", style = MaterialTheme.typography.titleSmall) }
+                    if (accounts.isEmpty()) item { Text("Сначала добавьте счёт в «Финансах» (⋮ → Новый счёт).", style = MaterialTheme.typography.bodyMedium) }
+                    else {
+                        // Сначала банки, от которых уже были операции, потом остальные
+                        val banks = (seenBanks.toList() + BankNotify.BANKS.values.distinct()).distinct()
+                        banks.forEach { bank ->
+                            item(key = "b_$bank") {
+                                AccountPicker(vm, accounts, (if (bank in seenBanks) "🏦 " else "") + bank, "bank:$bank", tick)
+                            }
+                            seen.filter { it.first == bank && it.second.isNotBlank() }.forEach { (_, card) ->
+                                item(key = "c_${bank}_$card") { AccountPicker(vm, accounts, "      карта •• $card", "card:$card", tick) }
+                            }
+                        }
+                    }
+                    item {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Проверить распознавание", style = MaterialTheme.typography.titleSmall)
+                                Text("Вставьте текст уведомления банка — покажу, что приложение из него поймёт.", style = MaterialTheme.typography.bodySmall)
+                                androidx.compose.material3.OutlinedTextField(test, { test = it }, Modifier.fillMaxWidth(), placeholder = { Text("Покупка 350 ₽ Пятёрочка, карта *1234") })
+                                if (test.isNotBlank()) {
+                                    val r = BankNotify.BANKS.keys.firstNotNullOfOrNull { BankNotify.parse(it, null, test, vm.today.toString(), "test") }
+                                    Text(r?.let { (if (it.income) "Доход +" else "Расход −") + money(it.amount) + (if (it.merchant.isNotBlank()) " · ${it.merchant}" else "") + (if (it.card.isNotBlank()) " · карта •• ${it.card}" else "") }
+                                        ?: "Не распознано. Пришлите этот текст через «Доработку» — добавлю такой формат.",
+                                        color = if (r != null) INC else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Операции за прошлое", style = MaterialTheme.typography.titleSmall)
+                                Text("Уведомления ловятся только с момента включения. Старые операции загрузите выпиской: в приложении банка — «Выписка» → формат CSV/Excel → сохранить файл.",
+                                    style = MaterialTheme.typography.bodySmall)
+                                androidx.compose.material3.OutlinedButton(onClick = onImport) { Text("Импорт выписки (CSV)") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountPicker(vm: MainViewModel, accounts: List<app.calstats.work.Account>, label: String, key: String, tick: Int) {
+    var open by remember { mutableStateOf(false) }
+    val cur = remember(tick) { vm.bankAccount(key) }
+    val name = accounts.firstOrNull { it.id == cur }?.name ?: if (key.startsWith("card:")) "как у банка" else "по умолчанию (${accounts.first().name})"
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box {
+            TextButton(onClick = { open = true }) { Text("$name ▾", maxLines = 1) }
+            androidx.compose.material3.DropdownMenu(open, { open = false }) {
+                androidx.compose.material3.DropdownMenuItem(text = { Text(if (key.startsWith("card:")) "Как у банка" else "По умолчанию") }, onClick = { open = false; vm.setBankAccount(key, null) })
+                accounts.forEach { a -> androidx.compose.material3.DropdownMenuItem(text = { Text(a.name) }, onClick = { open = false; vm.setBankAccount(key, a.id) }) }
+            }
+        }
+    }
+}

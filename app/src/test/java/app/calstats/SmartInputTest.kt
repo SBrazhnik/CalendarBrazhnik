@@ -76,3 +76,13 @@ class BotTest {
         BotBrain.COMMANDS.forEach { (c, _) -> org.junit.Assert.assertTrue(c, Regex("^[a-z0-9_]{1,32}$").matches(c)) }
     }
 }
+
+class BankCardTest {
+    @org.junit.Test fun cardMask() {
+        val t = app.calstats.work.BankNotify.parse("ru.sberbankmobile", null, "MIR-1234 14:05 Покупка 350р Пятёрочка Баланс: 12 000р", "2026-11-25", "x")!!
+        org.junit.Assert.assertEquals("1234", t.card)
+        org.junit.Assert.assertEquals(35000L, t.amount)
+        val t2 = app.calstats.work.BankNotify.parse("com.idamob.tinkoff.android", "Покупка", "Оплата 1 250 ₽, карта *9876. Магнит", "2026-11-25", "y")!!
+        org.junit.Assert.assertEquals("9876", t2.card)
+    }
+}
