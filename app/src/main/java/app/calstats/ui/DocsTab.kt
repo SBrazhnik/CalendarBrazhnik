@@ -150,9 +150,7 @@ fun DocsTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         snackbarHost = { SnackbarHost(snackbar) },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DView.entries.forEach { v -> FilterChip(selected = view == v, onClick = { view = v }, label = { Text(v.title) }) }
-            }
+            SubTabs("docs", DView.entries.map { it.name to it.title }, view.name, Modifier.padding(horizontal = 16.dp)) { view = DView.valueOf(it) }
             when {
                 view == DView.SUBS -> SubsView(vm)
                 locked -> LockedView(vm)

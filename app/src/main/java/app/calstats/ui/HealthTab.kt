@@ -147,13 +147,8 @@ fun HealthTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         snackbarHost = { SnackbarHost(snackbar) },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                val female = vm.work.healthProfile?.sex == app.calstats.work.Sex.FEMALE || vm.work.cycles.isNotEmpty()
-                HView.entries.filter { it != HView.CYCLE || female }.forEach { v -> FilterChip(selected = view == v, onClick = { view = v }, label = { Text(v.title) }) }
-            }
+            val female = vm.work.healthProfile?.sex == app.calstats.work.Sex.FEMALE || vm.work.cycles.isNotEmpty()
+            SubTabs("health", HView.entries.filter { it != HView.CYCLE || female }.map { it.name to it.title }, view.name, Modifier.padding(horizontal = 16.dp)) { view = HView.valueOf(it) }
             when (view) {
                 HView.TODAY -> TodayView(vm, day, { day = it }, onFood = { foodFor = day to it }, onProfile = { view = HView.PROFILE }, onWeight = { weightDialog = true })
                 HView.FOOD -> FoodView(vm, day, { day = it }) { foodFor = day to it }

@@ -51,6 +51,17 @@ object DevRequests {
     fun seen(ctx: Context, n: Int) = sp(ctx).getInt("seen_$n", 0)
     fun markSeen(ctx: Context, n: Int, count: Int) = sp(ctx).edit().putInt("seen_$n", count).apply()
 
+    /** Черновик нового запроса: не теряется, если отвлечься на другое приложение. */
+    data class Draft(val kind: Kind, val module: String?, val title: String, val text: String, val open: Boolean)
+    fun draft(ctx: Context): Draft? = sp(ctx).let { p ->
+        if (!p.contains("d_title") && !p.contains("d_text")) null
+        else Draft(runCatching { Kind.valueOf(p.getString("d_kind", "FEATURE")!!) }.getOrDefault(Kind.FEATURE), p.getString("d_module", null),
+            p.getString("d_title", "")!!, p.getString("d_text", "")!!, p.getBoolean("d_open", false))
+    }
+    fun saveDraft(ctx: Context, d: Draft) = sp(ctx).edit().putString("d_kind", d.kind.name).putString("d_module", d.module)
+        .putString("d_title", d.title).putString("d_text", d.text).putBoolean("d_open", d.open).apply()
+    fun clearDraft(ctx: Context) = sp(ctx).edit().remove("d_kind").remove("d_module").remove("d_title").remove("d_text").remove("d_open").apply()
+
     /** Последний список — показываем сразу, пока обновляется. */
     fun cached(ctx: Context): List<Issue> = runCatching { parseIssues(JSONArray(sp(ctx).getString("cache", "[]"))) }.getOrDefault(emptyList())
     fun unread(ctx: Context) = cached(ctx).count { it.comments > seen(ctx, it.number) }
@@ -173,10 +184,12 @@ object DevRequests {
         return parseIssues(JSONArray().put(r)).first()
     }
 
-    fun reply(ctx: Context, n: Int, text: String, photos: List<Uri>) {
+    fun reply(ctx: Context, n: Int, text: String, photos: List<Uri>, reopen: Boolean = false) {
         val links = photos.mapIndexedNotNull { i, u -> runCatching { upload(ctx, u, "${System.currentTimeMillis()}_$i.jpg") }.getOrNull() }
         val body = text.trim() + links.joinToString("") { "\n![скриншот]($it)" } + "\n<!-- app -->"
         call(ctx, "POST", path(ctx) + "/issues/$n/comments", JSONObject().put("body", body))
+        // Уточнение к выполненному запросу — снова открываем его, чтобы разработчик взял в работу
+        if (reopen) runCatching { setOpen(ctx, n, true) }
         // если разработчик ждал ответа — снимаем метку
         runCatching { call(ctx, "DELETE", path(ctx) + "/issues/$n/labels/" + java.net.URLEncoder.encode("нужен ответ", "UTF-8").replace("+", "%20")) }
     }

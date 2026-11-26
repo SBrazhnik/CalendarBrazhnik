@@ -416,10 +416,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val id = (if (t.card.isNotBlank()) bankAccount("card:${t.card}") else null) ?: bankAccount("bank:${t.bank}")
         return active.firstOrNull { it.id == id } ?: active.firstOrNull()
     }
-    private fun autoAcceptBank() { if (bankAuto && bankPending.isNotEmpty() && work.accounts.any { !it.archived }) acceptBank(bankPending.map { it.id }.toSet(), quiet = true) }
+    private fun autoAcceptBank() {
+        val txs = bankPending.filter { !it.isBill }
+        if (bankAuto && txs.isNotEmpty() && work.accounts.any { !it.archived }) acceptBank(txs.map { it.id }.toSet(), quiet = true)
+    }
 
     fun acceptBank(ids: Set<String>, quiet: Boolean = false) {
-        val list = bankPending.filter { it.id in ids }
+        val list = bankPending.filter { it.id in ids && !it.isBill }
         updateWork { w0 ->
             val w = app.calstats.work.FinanceOps.ensureDefaults(w0)
             if (w.accounts.none { !it.archived }) return@updateWork w0

@@ -15,7 +15,13 @@ data class PendingTx(
     val date: String,
     val raw: String,
     val card: String = "",
-)
+    /** "tx" — операция, "bill" — счёт к оплате (ещё не оплачен). */
+    val kind: String = "tx",
+    /** Приложение, откуда пришло уведомление — чтобы открыть банк для оплаты. */
+    val pkg: String = "",
+) {
+    val isBill get() = kind == "bill"
+}
 
 /** Разбор уведомлений банковских приложений: «Покупка 350 ₽ Пятёрочка», «Пополнение +5 000 ₽» и т.п. */
 object BankNotify {
@@ -32,30 +38,49 @@ object BankNotify {
     private val EXPENSE = Regex("(?iu)(покупк|оплат|списан|перевод\\s|снят|платеж|платёж|расход)")
     private val INCOME = Regex("(?iu)(зачислен|пополнен|поступлен|возврат|перевод от|входящий|кэшбэк|cashback)")
     private val MONEY = Regex("([+−-]?)\\s?(\\d{1,3}(?:[\\s\\u00A0\\u202F]\\d{3})*(?:[.,]\\d{1,2})?)\\s?(?:₽|р\\b|руб|RUB|RUR)")
+    /** Отмена/возврат операции — деньги вернулись. */
+    private val REFUND = Regex("(?iu)(отмен[аеиы]|отменен|отменён|возврат|refund|reversal|отказ в операции)")
+    /** Счёт к оплате, а не сама оплата. */
+    private val BILL = Regex("(?iu)(оплатите|к оплате|выставлен[а-яё]*\\s+сч[её]т|сч[её]т на оплату|сч[её]т на сумму|новый сч[её]т|необходимо оплатить|ожидает оплаты|задолженност|напоминаем.{0,40}оплат|начислен[а-яё]*\\s+(налог|штраф|пени))")
+    private val PAID = Regex("(?iu)(успешно|оплачен[оа]?\\b|списан[оа]?\\b|покупка\\b|выполнен)")
+    /** SMS от банков в обычном приложении сообщений: отправитель → банк. */
+    val MESSAGING = setOf("com.samsung.android.messaging", "com.google.android.apps.messaging", "com.android.mms", "com.android.messaging")
+    private val SMS_SENDERS = listOf(
+        Regex("^900$") to "Сбер", Regex("(?iu)sber|сбер") to "Сбер", Regex("(?iu)tinkoff|t-bank|т-банк|tbank") to "Т-Банк",
+        Regex("(?iu)alfa|альфа") to "Альфа-Банк", Regex("(?iu)vtb|втб") to "ВТБ", Regex("(?iu)raiff|райф") to "Райффайзен",
+        Regex("(?iu)gazprom|газпром") to "Газпромбанк", Regex("(?iu)sovcom|совком|halva|халва") to "Совкомбанк", Regex("(?iu)pochta|почта") to "Почта Банк",
+        Regex("(?iu)ozon|озон") to "Ozon Банк", Regex("(?iu)mts.?bank|мтс.?банк") to "МТС Банк", Regex("(?iu)psb|псб") to "ПСБ",
+        Regex("(?iu)rosbank|росбанк") to "Росбанк", Regex("(?iu)otkritie|открытие") to "Открытие", Regex("(?iu)yandex.?bank|яндекс.?банк") to "Яндекс Банк",
+        Regex("(?iu)rshb|россельхоз") to "Россельхозбанк", Regex("(?iu)uralsib|уралсиб") to "Уралсиб", Regex("(?iu)mkb|мкб") to "МКБ",
+    )
+    fun smsBank(sender: String?): String? = sender?.trim()?.let { s -> SMS_SENDERS.firstOrNull { it.first.containsMatchIn(s) }?.second }
+
     private val NOISE = Regex("(?iu)(баланс|доступно|остаток|комисси)[^\\n]*")
 
     /** Последние 4 цифры карты/счёта: «*1234», «•• 1234», «MIR-1234», «карта 1234», «счёт *1234». */
     val CARD = Regex("(?iu)(?:[*•]+\\s?|(?:mir|visa|ecmc|mc|мир|карт[аеуы]?|сч[её]т[аеу]?)\\s*[-*•]?\\s*)(\\d{4})(?!\\d)")
 
-    fun parse(pkg: String, title: String?, text: String?, date: String, id: String): PendingTx? {
-        val bank = BANKS[pkg] ?: return null
+    fun parse(pkg: String, title: String?, text: String?, date: String, id: String, bankName: String? = null): PendingTx? {
+        val bank = bankName ?: BANKS[pkg] ?: return null
         val full = listOfNotNull(title, text).joinToString(" ").replace('\n', ' ')
         if (full.isBlank()) return null
         // Код подтверждения, вход и т.п. — не операции
         if (Regex("(?iu)(код|пароль|вход в|никому не сообщ)").containsMatchIn(full)) return null
-        val isIncome = INCOME.containsMatchIn(full) && !Regex("(?iu)покупк|оплат").containsMatchIn(full)
+        val refund = REFUND.containsMatchIn(full)
+        val bill = !refund && BILL.containsMatchIn(full) && !PAID.containsMatchIn(full)
+        val isIncome = refund || (INCOME.containsMatchIn(full) && !Regex("(?iu)покупк|оплат").containsMatchIn(full))
         val isExpense = EXPENSE.containsMatchIn(full)
         val clean = NOISE.replace(full, " ")
         val m = MONEY.find(clean) ?: return null
-        if (!isIncome && !isExpense && m.groupValues[1].isEmpty()) return null
+        if (!isIncome && !isExpense && !bill && m.groupValues[1].isEmpty()) return null
         val amount = BankImport.parseAmount(m.groupValues[2]) ?: return null
         if (amount <= 0) return null
-        val income = isIncome || m.groupValues[1] == "+"
+        val income = !bill && (isIncome || m.groupValues[1] == "+")
         val after = clean.substring(m.range.last + 1).trim().trim('.', ',', ' ', '·', '—', '-')
         val merchant = after.split(Regex("[.\\n]")).firstOrNull()?.trim()?.take(60).orEmpty()
             .ifBlank { title?.takeIf { !EXPENSE.containsMatchIn(it) && !INCOME.containsMatchIn(it) }.orEmpty() }
         val card = CARD.find(full)?.groupValues?.get(1).orEmpty()
-        return PendingTx(id, bank, amount, income, merchant.replace(CARD, "").trim(), date, full.take(300), card)
+        return PendingTx(id, bank, amount, income, merchant.replace(CARD, "").trim(), date, full.take(300), card, if (bill) "bill" else "tx", pkg)
     }
 }
 

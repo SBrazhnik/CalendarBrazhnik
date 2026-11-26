@@ -214,12 +214,7 @@ fun FinanceTab(vm: MainViewModel, snackbar: SnackbarHostState) {
         snackbarHost = { SnackbarHost(snackbar) },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                FIN_VIEWS.forEach { (k, t) -> FilterChip(selected = view == k, onClick = { view = k }, label = { Text(t) }) }
-            }
+            SubTabs("fin", FIN_VIEWS, view, Modifier.padding(horizontal = 12.dp)) { view = it }
             if (view in listOf("OVERVIEW", "TXS", "BUDGETS")) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { month = month.minusMonths(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Назад") }

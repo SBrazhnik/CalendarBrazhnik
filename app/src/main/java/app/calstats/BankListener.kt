@@ -19,13 +19,20 @@ import java.time.ZoneId
  */
 class BankListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName !in BankNotify.BANKS) return
+        val pkg = sbn.packageName
         val ex = sbn.notification.extras
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+        // Источник: банковское приложение, SMS от банка или приложение со словом «банк» в названии
+        val bank = BankNotify.BANKS[pkg]
+            ?: (if (pkg in BankNotify.MESSAGING) BankNotify.smsBank(title) else null)
+            ?: runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrNull()
+                ?.takeIf { pkg !in BankNotify.MESSAGING && Regex("(?iu)банк|bank").containsMatchIn(it) }
+            ?: return
         val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString()
         val date = Instant.ofEpochMilli(sbn.postTime).atZone(ZoneId.systemDefault()).toLocalDate().toString()
-        val tx = BankNotify.parse(sbn.packageName, title, text, date, "${sbn.packageName}:${sbn.postTime}:${text.hashCode()}") ?: return
-        BankQueue.add(this, tx)
+        val tx = BankNotify.parse(pkg, if (pkg in BankNotify.MESSAGING) null else title, text, date, "$pkg:${sbn.postTime}:${text.hashCode()}", bank)
+        BankQueue.log(this, bank, listOfNotNull(title, text).joinToString(" · "), tx)
+        if (tx != null) BankQueue.add(this, tx)
     }
 }
 
@@ -53,6 +60,22 @@ object BankQueue {
         if (cur.any { it.id == t.id || (it.amount == t.amount && it.merchant == t.merchant && it.date == t.date && it.income == t.income) }) return
         p(ctx).edit().putString("q", json.encodeToString((cur + t).takeLast(100))).apply()
     }
+
+    /** Журнал последних уведомлений банков (с результатом разбора) — чтобы понять, почему операция не попала. */
+    @Synchronized
+    fun log(ctx: Context, bank: String, text: String, tx: PendingTx?) {
+        val p = ctx.getSharedPreferences("bank_log", Context.MODE_PRIVATE)
+        val arr = runCatching { org.json.JSONArray(p.getString("l", "[]")) }.getOrDefault(org.json.JSONArray())
+        val o = org.json.JSONObject().put("t", System.currentTimeMillis()).put("bank", bank).put("text", text.take(300))
+            .put("res", tx?.let { (if (it.isBill) "счёт к оплате " else if (it.income) "доход +" else "расход −") + it.amount / 100 + " ₽" } ?: "не распознано")
+        val out = org.json.JSONArray().put(o)
+        for (i in 0 until minOf(arr.length(), 29)) out.put(arr.get(i))
+        p.edit().putString("l", out.toString()).apply()
+    }
+    fun logList(ctx: Context): List<Triple<Long, String, Pair<String, String>>> = runCatching {
+        val a = org.json.JSONArray(ctx.getSharedPreferences("bank_log", Context.MODE_PRIVATE).getString("l", "[]"))
+        (0 until a.length()).map { a.getJSONObject(it).let { o -> Triple(o.getLong("t"), o.getString("bank"), o.getString("text") to o.getString("res")) } }
+    }.getOrDefault(emptyList())
 
     @Synchronized
     fun remove(ctx: Context, ids: Set<String>) {

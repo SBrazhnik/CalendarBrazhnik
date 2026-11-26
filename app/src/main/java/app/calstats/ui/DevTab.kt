@@ -89,7 +89,12 @@ fun DevTab(vm: MainViewModel, snackbar: SnackbarHostState) {
     var unlocked by remember { mutableStateOf(false) }
     @Suppress("DEPRECATION") val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(owner) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) unlocked = false }
+        // Если отлучились ненадолго (подсмотреть сумму в банке) — раздел не закрывается
+        var stoppedAt = 0L
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) stoppedAt = System.currentTimeMillis()
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_START && stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 3 * 60_000L) unlocked = false
+        }
         owner.lifecycle.addObserver(obs)
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
@@ -170,7 +175,7 @@ private fun DevContent(vm: MainViewModel, snackbar: SnackbarHostState, onLock: (
     var error by remember { mutableStateOf<String?>(null) }
     var filter by rememberSaveable { mutableStateOf(0) }
     var openN by rememberSaveable { mutableStateOf<Int?>(null) }
-    var newReq by remember { mutableStateOf(false) }
+    var newReq by remember { mutableStateOf(DevRequests.draft(ctx)?.open == true) }
     var settings by remember { mutableStateOf(!configured) }
     var tick by remember { mutableStateOf(0) }
     fun refresh() {
@@ -236,8 +241,9 @@ private fun DevContent(vm: MainViewModel, snackbar: SnackbarHostState, onLock: (
         }
     }
     if (settings) DevSettingsDialog(onDismiss = { settings = false }, onSaved = { configured = true; settings = false; refresh() })
-    if (newReq) NewRequestDialog(vm, onDismiss = { newReq = false }) { created ->
+    if (newReq) NewRequestDialog(vm, onDismiss = { newReq = false; DevRequests.draft(ctx)?.let { DevRequests.saveDraft(ctx, it.copy(open = false)) } }) { created ->
         newReq = false
+        DevRequests.clearDraft(ctx)
         issues = listOf(created) + issues
         vm.message = "✉️ Запрос №${created.number} отправлен"
         refresh()
@@ -309,10 +315,13 @@ private fun PhotoPicker(photos: List<Uri>, onChange: (List<Uri>) -> Unit) {
 private fun NewRequestDialog(vm: MainViewModel, onDismiss: () -> Unit, onCreated: (DevRequests.Issue) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var kind by rememberSaveable { mutableStateOf(DevRequests.Kind.FEATURE) }
-    var module by rememberSaveable { mutableStateOf<String?>(null) }
-    var title by rememberSaveable { mutableStateOf("") }
-    var text by rememberSaveable { mutableStateOf("") }
+    val d0 = remember { DevRequests.draft(ctx) }
+    var kind by rememberSaveable { mutableStateOf(d0?.kind ?: DevRequests.Kind.FEATURE) }
+    var module by rememberSaveable { mutableStateOf(d0?.module) }
+    var title by rememberSaveable { mutableStateOf(d0?.title.orEmpty()) }
+    var text by rememberSaveable { mutableStateOf(d0?.text.orEmpty()) }
+    // Черновик сохраняется на ходу — не пропадёт, даже если раздел закроется
+    LaunchedEffect(kind, module, title, text) { if (title.isNotBlank() || text.isNotBlank()) DevRequests.saveDraft(ctx, DevRequests.Draft(kind, module, title, text, true)) }
     var photos by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
@@ -395,6 +404,8 @@ private fun DevIssueScreen(vm: MainViewModel, iss: DevRequests.Issue, onBack: ()
                 Spacer(Modifier.height(8.dp))
             }
             Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!iss.open) Text("Запрос выполнен. Напишите уточнение — он откроется снова и вернётся в работу.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(reply, { reply = it }, Modifier.fillMaxWidth(), placeholder = { Text("Ответить или уточнить…") }, maxLines = 5,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -402,7 +413,7 @@ private fun DevIssueScreen(vm: MainViewModel, iss: DevRequests.Issue, onBack: ()
                     Button(enabled = !busy && (reply.isNotBlank() || photos.isNotEmpty()), onClick = {
                         busy = true
                         scope.launch {
-                            val r = withContext(Dispatchers.IO) { runCatching { DevRequests.reply(ctx, iss.number, reply, photos) } }
+                            val r = withContext(Dispatchers.IO) { runCatching { DevRequests.reply(ctx, iss.number, reply, photos, reopen = !iss.open) } }
                             busy = false
                             r.onSuccess { reply = ""; photos = emptyList(); load(); onChanged() }.onFailure { err = "Не отправилось: " + (it.message ?: app.calstats.Net.why(it)) }
                         }

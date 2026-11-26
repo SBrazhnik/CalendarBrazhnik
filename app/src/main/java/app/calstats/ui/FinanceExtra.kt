@@ -73,9 +73,37 @@ private val EXP = Color(0xFFC0583F)
 
 /** Операции из уведомлений банков + предложение включить автоучёт. */
 fun LazyListScope.bankInbox(vm: MainViewModel) {
+    // Счета к оплате из уведомлений (налоговая, ЖКХ, штрафы…) — отдельно от операций
+    item(key = "bank_bills") {
+        val ctx = LocalContext.current
+        val bills = vm.bankPending.filter { it.isBill }
+        if (bills.isEmpty()) return@item
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f))) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                Text("🔔 К оплате: ${bills.size}", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleSmall)
+                bills.reversed().forEach { b ->
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(b.merchant.ifBlank { b.bank }, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(money(b.amount), fontWeight = FontWeight.SemiBold)
+                        }
+                        Text("${b.bank} · ${Fmt.dateNoYear(LocalDate.parse(b.date))} · ${b.raw.take(120)}", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Row {
+                            val launch = remember(b.pkg) { b.pkg.takeIf { it.isNotBlank() }?.let { ctx.packageManager.getLaunchIntentForPackage(it) } }
+                            if (launch != null) TextButton(onClick = { runCatching { ctx.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }) { Text("Оплатить в банке") }
+                            TextButton(onClick = { vm.dropBank(setOf(b.id)); vm.message = "Отмечено как оплаченное. Сама оплата придёт операцией из банка" }) { Text("Оплачено") }
+                            TextButton(onClick = { vm.dropBank(setOf(b.id)) }) { Text("Скрыть") }
+                        }
+                    }
+                }
+            }
+        }
+    }
     item(key = "bank_inbox") {
         val ctx = LocalContext.current
-        val list = vm.bankPending
+        val list = vm.bankPending.filter { !it.isBill }
         if (list.isEmpty()) {
             if (!BankQueue.enabled(ctx) && !vm.bankHintHidden) {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
@@ -260,7 +288,7 @@ fun BanksScreen(vm: MainViewModel, onImport: () -> Unit, onDismiss: () -> Unit) 
                 }
                 androidx.compose.foundation.lazy.LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item {
-                        Text("Банки в России не дают сторонним приложениям прямой доступ к счетам. Поэтому «Зелёный ритм» берёт операции из уведомлений банковских приложений на этом телефоне — покупки, переводы, зачисления — и записывает их в нужный счёт. Другие уведомления не читаются и никуда не отправляются.",
+                        Text("Банки в России не дают сторонним приложениям прямой доступ к счетам. Поэтому «Зелёный ритм» берёт операции из уведомлений банковских приложений и SMS от банков на этом телефоне — покупки, переводы, зачисления, отмены — и записывает их в нужный счёт. Счета «к оплате» (налоги, ЖКХ, штрафы) не списываются, а попадают в блок «🔔 К оплате». Другие уведомления не читаются и никуда не отправляются.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     item {
@@ -302,6 +330,23 @@ fun BanksScreen(vm: MainViewModel, onImport: () -> Unit, onDismiss: () -> Unit) 
                         }
                     }
                     item {
+                        val log = remember(vm.bankPending) { BankQueue.logList(ctx) }
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Последние уведомления банков", style = MaterialTheme.typography.titleSmall)
+                                if (log.isEmpty()) Text(if (enabled) "Пока ни одного. Если операция была, а здесь пусто — уведомление не дошло до телефона или скрыто (см. пункт 1)." else "Появятся после включения доступа.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                log.take(10).forEach { (t, bank, tr) ->
+                                    val (text, res) = tr
+                                    Text("${java.time.Instant.ofEpochMilli(t).atZone(java.time.ZoneId.systemDefault()).let { "%02d.%02d %02d:%02d".format(it.dayOfMonth, it.monthValue, it.hour, it.minute) }} · $bank → $res",
+                                        style = MaterialTheme.typography.labelMedium, color = if (res == "не распознано") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                                    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                }
+                                if (log.any { it.third.second == "не распознано" }) Text("Нераспознанные пришлите через «Доработку» — добавлю такой формат.", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    item {
                         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("Проверить распознавание", style = MaterialTheme.typography.titleSmall)
@@ -309,7 +354,7 @@ fun BanksScreen(vm: MainViewModel, onImport: () -> Unit, onDismiss: () -> Unit) 
                                 androidx.compose.material3.OutlinedTextField(test, { test = it }, Modifier.fillMaxWidth(), placeholder = { Text("Покупка 350 ₽ Пятёрочка, карта *1234") })
                                 if (test.isNotBlank()) {
                                     val r = BankNotify.BANKS.keys.firstNotNullOfOrNull { BankNotify.parse(it, null, test, vm.today.toString(), "test") }
-                                    Text(r?.let { (if (it.income) "Доход +" else "Расход −") + money(it.amount) + (if (it.merchant.isNotBlank()) " · ${it.merchant}" else "") + (if (it.card.isNotBlank()) " · карта •• ${it.card}" else "") }
+                                    Text(r?.let { (if (it.isBill) "Счёт к оплате " else if (it.income) "Доход +" else "Расход −") + money(it.amount) + (if (it.merchant.isNotBlank()) " · ${it.merchant}" else "") + (if (it.card.isNotBlank()) " · карта •• ${it.card}" else "") }
                                         ?: "Не распознано. Пришлите этот текст через «Доработку» — добавлю такой формат.",
                                         color = if (r != null) INC else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                                 }

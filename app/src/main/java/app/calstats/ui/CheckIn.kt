@@ -102,7 +102,15 @@ fun CheckInSheet(vm: MainViewModel) {
                     Text("${w.category(t.categoryId)?.emoji ?: "•"} ${SplitMath.money(t.amount)} ${t.note}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
-                OutlinedButton(onClick = { vm.quickInput = false }) { Text("+ Записать трату") }
+                // Трата прямо здесь — всегда записывается как расход
+                var spend by remember { mutableStateOf("") }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(spend, { spend = it }, Modifier.weight(1f), placeholder = { Text("500 продукты") }, singleLine = true)
+                    Button(enabled = Regex("\\d").containsMatchIn(spend), onClick = {
+                        val r = app.calstats.work.SmartInput.asKind(app.calstats.work.SmartInput.Kind.EXPENSE, spend, java.time.LocalDateTime.of(day, java.time.LocalTime.now()))
+                        vm.message = vm.applySmart(r); spend = ""
+                    }) { Text("Записать") }
+                }
             }
 
             Block("Дневник") {

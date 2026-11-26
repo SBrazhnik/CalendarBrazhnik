@@ -135,6 +135,14 @@ object SmartInput {
             }
         }
 
+        // «продукты 500», «такси 350» — слово траты и сумма без даты/времени → расход
+        val cat = guessCategory(t)
+        if (cat != null && !Regex("""(?iu)\d{1,2}[:.]\d{2}|\d{1,2}\s*(январ|феврал|март|апрел|ма[яй]|июн|июл|август|сентябр|октябр|ноябр|декабр)|завтра|сегодня в|послезавтра|понедельник|вторник|сред[уа]|четверг|пятниц|суббот|воскресень""").containsMatchIn(t)) {
+            amountOf(text)?.takeIf { it.first >= 1000 }?.let { (kop, r) ->
+                return Result(Kind.EXPENSE, clean(text.removeRange(r)), amount = kop, category = cat)
+            }
+        }
+
         // Событие или задача — по дате/времени
         val q = QuickParse.parse(text, now)
         val title = clean((q?.title ?: text).replace(Regex("(?iu)^(напомни(?:ть)?(?: мне)?|задача|надо|нужно|сделать)\\s+"), ""))

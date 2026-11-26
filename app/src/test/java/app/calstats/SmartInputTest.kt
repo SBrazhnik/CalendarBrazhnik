@@ -86,3 +86,30 @@ class BankCardTest {
         org.junit.Assert.assertEquals("9876", t2.card)
     }
 }
+
+class BankKindsTest {
+    private fun p(s: String) = app.calstats.work.BankNotify.parse("ru.alfabank.mobile.android", null, s, "2026-11-26", "z")
+    @org.junit.Test fun refundIsIncome() {
+        val t = p("Отмена операции. Покупка 1 ₽ ФНС России, карта *4321")!!
+        org.junit.Assert.assertTrue(t.income); org.junit.Assert.assertFalse(t.isBill)
+    }
+    @org.junit.Test fun billIsNotPayment() {
+        val t = p("Оплатите счёт на сумму 47 998 ₽ от ФНС России")!!
+        org.junit.Assert.assertTrue(t.isBill); org.junit.Assert.assertFalse(t.income)
+        val paid = p("Оплата 47 998 ₽ ФНС России успешно")!!
+        org.junit.Assert.assertFalse(paid.isBill)
+    }
+    @org.junit.Test fun incomingTransfer() {
+        val t = p("Перевод от Иван И. +5 000 ₽")!!
+        org.junit.Assert.assertTrue(t.income)
+    }
+    @org.junit.Test fun smsSender() {
+        org.junit.Assert.assertEquals("Сбер", app.calstats.work.BankNotify.smsBank("900"))
+        org.junit.Assert.assertEquals("Альфа-Банк", app.calstats.work.BankNotify.smsBank("Alfa-Bank"))
+    }
+    @org.junit.Test fun smartExpenseWithoutVerb() {
+        val r = app.calstats.work.SmartInput.parse("продукты 500", java.time.LocalDateTime.of(2026, 11, 26, 20, 0))!!
+        org.junit.Assert.assertEquals(app.calstats.work.SmartInput.Kind.EXPENSE, r.kind)
+        org.junit.Assert.assertEquals(50000L, r.amount)
+    }
+}
