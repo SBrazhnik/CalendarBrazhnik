@@ -562,7 +562,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Без «бота на связи» сообщения забираются при открытии приложения — и бот сразу отвечает. */
     fun pullTelegram() {
         TelegramService.access = botAccess
-        if (TelegramService.enabled(getApplication())) { TelegramService.start(getApplication()); return }
+        if (TelegramService.enabled(getApplication())) {
+            if (!TelegramService.running) TelegramService.start(getApplication())
+            BotWatchdog.schedule(getApplication())
+            return
+        }
         if (!telegramState.connected || !telegramState.inbox) return
         viewModelScope.launch {
             val msgs = runCatching { telegram.pull() }.getOrDefault(emptyList())

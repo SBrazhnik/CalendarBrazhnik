@@ -163,5 +163,6 @@ class DrinkBootReceiver : BroadcastReceiver() {
         Notify.scheduleAll(ctx)
         runCatching { CardPlaces.sync(ctx, app.calstats.work.WorkStore(ctx).load()) }
         TelegramService.start(ctx)
+        if (TelegramService.enabled(ctx)) BotWatchdog.schedule(ctx)
     }
 }

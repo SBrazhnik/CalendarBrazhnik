@@ -337,6 +337,8 @@ fun TelegramCard(vm: MainViewModel) {
         repeat(40) {
             if (runCatching { vm.telegram.findChat() }.getOrDefault(false)) {
                 vm.refreshTelegram()
+                // Сразу «на связи» — иначе бот отвечает, только когда открыто приложение
+                app.calstats.TelegramService.setEnabled(ctx, true)
                 vm.message = "Telegram подключён"
                 waiting = false
                 return@LaunchedEffect
@@ -363,14 +365,27 @@ fun TelegramCard(vm: MainViewModel) {
                         vm.message = "Бот на связи. Напишите ему «что сегодня?»"
                     }
                 }
-                if (!live) Text("Без этого бот отвечает, только когда вы открываете приложение.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                if (!live) Text("Без этого бот отвечает, только когда вы открываете приложение — ответ может идти до часа.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                if (live) {
+                    var fast by remember { mutableStateOf(app.calstats.TelegramService.fast(ctx)) }
+                    SwitchRow("🚀 Без задержек", "Телефон не усыпляет бота: ответ за секунды даже на заблокированном экране. Батарея — чуть больше расход", fast) { fast = it; app.calstats.TelegramService.setFast(ctx, it) }
+                    val pm = ctx.getSystemService(android.os.PowerManager::class.java)
+                    if (pm?.isIgnoringBatteryOptimizations(ctx.packageName) == false) {
+                        Text("⚠ Телефон экономит батарею на приложении и может останавливать бота. Разрешите работу без ограничений. На Samsung также: Настройки → Батарея → Ограничения фона → «Никогда не спящие приложения» → добавить «Зелёный ритм».",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        OutlinedButton(onClick = {
+                            runCatching { ctx.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:" + ctx.packageName))) }
+                        }) { Text("Разрешить работу в фоне") }
+                    }
+                    if (!app.calstats.TelegramService.running) OutlinedButton(onClick = { app.calstats.TelegramService.start(ctx) }) { Text("Запустить бота сейчас") }
+                }
                 // Диагностика — чтобы было видно, что не так
                 var tick by remember { mutableStateOf(0) }
                 LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(2000); tick++ } }
                 val err = remember(tick) { vm.telegram.lastError() }
                 val okAt = remember(tick) { vm.telegram.lastOk() }
                 Text(
-                    "Состояние: " + (if (live) (if (app.calstats.TelegramService.running) "служба работает" else "служба не запущена") else "ответы при открытии приложения") +
+                    "Состояние: " + (if (live) (if (app.calstats.TelegramService.running) "служба работает" + app.calstats.TelegramService.lastPoll.takeIf { it > 0 }?.let { " · ждёт сообщений с ${java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))}" }.orEmpty() else "служба не запущена") else "ответы при открытии приложения") +
                         (if (okAt > 0) " · связь с Telegram ${java.time.Instant.ofEpochMilli(okAt).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))}" else "") +
                         (err?.let { "\n⚠ Ошибка: $it" } ?: ""),
                     style = MaterialTheme.typography.bodySmall,

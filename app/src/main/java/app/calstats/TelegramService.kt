@@ -34,8 +34,14 @@ class TelegramService : Service() {
         fun enabled(ctx: Context) = sp(ctx).getBoolean("live", false)
         fun setEnabled(ctx: Context, on: Boolean) {
             sp(ctx).edit().putBoolean("live", on).apply()
-            if (on) start(ctx) else stop(ctx)
+            if (on) { start(ctx); BotWatchdog.schedule(ctx) } else { stop(ctx); BotWatchdog.cancel(ctx) }
         }
+        /** «Без задержек»: телефон не усыпляет опрос — ответ за секунды даже в режиме сна (чуть больше расход батареи). */
+        fun fast(ctx: Context) = sp(ctx).getBoolean("fast", true)
+        fun setFast(ctx: Context, on: Boolean) { sp(ctx).edit().putBoolean("fast", on).apply(); if (enabled(ctx)) { stop(ctx); start(ctx) } }
+        /** Когда служба последний раз спрашивала Telegram о новых сообщениях. */
+        @Volatile var lastPoll = 0L
+            private set
 
         fun start(ctx: Context) {
             if (!enabled(ctx) || !TelegramBot(ctx).state().connected) return
@@ -69,16 +75,23 @@ class TelegramService : Service() {
         val bot = TelegramBot(this)
         runCatching { bot.setupMenu() }
         var fails = 0
+        val wl = if (fast(this)) getSystemService(android.os.PowerManager::class.java)
+            ?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "zelenyi:bot")?.apply { setReferenceCounted(false) } else null
+        try {
         while (scope.isActive) {
             if (!bot.state().connected) { stopSelf(); return }
-            val msgs = runCatching { bot.poll(50) }.onFailure { fails++ }.onSuccess { fails = 0 }.getOrDefault(emptyList())
+            // Держим процессор на время одного опроса (не дольше 70 с), чтобы сон телефона не задерживал ответ
+            wl?.acquire(70_000L)
+            lastPoll = System.currentTimeMillis()
+            val msgs = runCatching { bot.poll(if (wl != null) 50 else 25) }.onFailure { fails++ }.onSuccess { fails = 0 }.getOrDefault(emptyList())
             for (m in msgs) {
                 runCatching { bot.typing() }
                 val reply = runCatching { BotBrain.answer(this, m, access ?: BotBrain.StoreAccess(this)) }.getOrElse { "Ошибка: ${it.message}" }
                 bot.send(reply, keyboard = true)
             }
-            if (fails > 0) delay(minOf(60_000L, 3_000L * fails)) // нет сети — пробуем реже
+            if (fails > 0) delay(minOf(30_000L, 2_000L * fails)) // нет сети — пробуем чуть реже
         }
+        } finally { runCatching { if (wl?.isHeld == true) wl.release() } }
     }
 
     override fun onDestroy() {
@@ -97,5 +110,25 @@ object TelegramPush {
         val on = when (kind) { "daily" -> st.daily; "updates" -> st.updates; else -> st.reminders }
         if (!on) return
         CoroutineScope(Dispatchers.IO).launch { runCatching { bot.send(text) } }
+    }
+}
+
+/**
+ * Сторож: раз в 15 минут проверяет, что бот на связи, и перезапускает службу,
+ * если система её остановила (Samsung любит усыплять фоновые приложения).
+ */
+class BotWatchdog : android.content.BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        if (TelegramService.enabled(ctx) && (!TelegramService.running || System.currentTimeMillis() - TelegramService.lastPoll > 5 * 60_000L)) {
+            TelegramService.stop(ctx); TelegramService.start(ctx)
+        }
+    }
+    companion object {
+        private fun pi(ctx: Context) = PendingIntent.getBroadcast(ctx, 79, Intent(ctx, BotWatchdog::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        fun schedule(ctx: Context) = runCatching {
+            ctx.getSystemService(android.app.AlarmManager::class.java)?.setInexactRepeating(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                android.os.SystemClock.elapsedRealtime() + 15 * 60_000L, android.app.AlarmManager.INTERVAL_FIFTEEN_MINUTES, pi(ctx))
+        }
+        fun cancel(ctx: Context) = runCatching { ctx.getSystemService(android.app.AlarmManager::class.java)?.cancel(pi(ctx)) }
     }
 }
