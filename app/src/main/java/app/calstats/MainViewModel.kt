@@ -400,6 +400,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun hideBankHint() { bankHintHidden = true; uiPrefs.edit().putBoolean("bank_hint_hidden", true).apply() }
     fun refreshBank() { bankPending = BankQueue.list(getApplication()) }
     fun dropBank(ids: Set<String>) { BankQueue.remove(getApplication(), ids); refreshBank() }
+    /** «Это реклама»: убрать и больше не принимать похожие уведомления. */
+    fun spamBank(t: app.calstats.work.PendingTx) { BankQueue.ignore(getApplication(), t.raw); dropBank(setOf(t.id)); message = "Похожие уведомления больше не попадут в финансы" }
     // ---------- Банки: куда записывать операции из уведомлений ----------
     private val bankPrefs = app.getSharedPreferences("bank_map", android.content.Context.MODE_PRIVATE)
     var bankAuto by mutableStateOf(bankPrefs.getBoolean("auto", false))

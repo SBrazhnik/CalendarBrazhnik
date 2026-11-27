@@ -55,6 +55,11 @@ object BankNotify {
     )
     fun smsBank(sender: String?): String? = sender?.trim()?.let { s -> SMS_SENDERS.firstOrNull { it.first.containsMatchIn(s) }?.second }
 
+    /** Реклама и акции банков: «Плати 50 ₽ — получи 500 ₽», «Кешбэк до 30%», «Оформите карту». */
+    private val AD = Regex("(?iu)(получи(те)?(?![а-яё])|получай|кешб[эе]к до|кэшб[эе]к до|скидк|акци[яиюей]|подар|выгод|предложени|успей|розыгрыш|приз(?![а-яё])|промокод|только сегодня|оформи|подключи|участв|реклам|(?<![а-яё])плати(?![а-яё])|выиграй|дарим|жми|переходи|узнайте|попробуйте|приглаша|до\\s?\\d+\\s?%)")
+    /** Признаки настоящей операции — с ними даже «рекламные» слова не мешают. */
+    private val REAL = Regex("(?iu)(списан|зачислен|покупка(?![а-яё])|баланс|остаток|доступно|[*•]\\s?\\d{4}|mir-\\d{4}|сч[её]т\\s?[*•]|отмен[аеы]|возврат средств)")
+
     private val NOISE = Regex("(?iu)(баланс|доступно|остаток|комисси)[^\\n]*")
 
     /** Последние 4 цифры карты/счёта: «*1234», «•• 1234», «MIR-1234», «карта 1234», «счёт *1234». */
@@ -66,6 +71,8 @@ object BankNotify {
         if (full.isBlank()) return null
         // Код подтверждения, вход и т.п. — не операции
         if (Regex("(?iu)(код|пароль|вход в|никому не сообщ)").containsMatchIn(full)) return null
+        // Реклама — не операция
+        if (AD.containsMatchIn(full) && !REAL.containsMatchIn(full)) return null
         val refund = REFUND.containsMatchIn(full)
         val bill = !refund && BILL.containsMatchIn(full) && !PAID.containsMatchIn(full)
         val isIncome = refund || (INCOME.containsMatchIn(full) && !Regex("(?iu)покупк|оплат").containsMatchIn(full))

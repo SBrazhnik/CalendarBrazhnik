@@ -30,7 +30,9 @@ class BankListener : NotificationListenerService() {
             ?: return
         val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString()
         val date = Instant.ofEpochMilli(sbn.postTime).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+        val raw = listOfNotNull(title, text).joinToString(" ")
         val tx = BankNotify.parse(pkg, if (pkg in BankNotify.MESSAGING) null else title, text, date, "$pkg:${sbn.postTime}:${text.hashCode()}", bank)
+            ?.takeIf { !BankQueue.ignored(this, raw) }
         BankQueue.log(this, bank, listOfNotNull(title, text).joinToString(" · "), tx)
         if (tx != null) BankQueue.add(this, tx)
     }
@@ -60,6 +62,16 @@ object BankQueue {
         if (cur.any { it.id == t.id || (it.amount == t.amount && it.merchant == t.merchant && it.date == t.date && it.income == t.income) }) return
         p(ctx).edit().putString("q", json.encodeToString((cur + t).takeLast(100))).apply()
     }
+
+    // ---------- «Это реклама»: похожие уведомления больше не попадают ----------
+    private fun key(raw: String) = raw.lowercase().replace(Regex("[\\d\\s.,₽+−\\-*•:]+"), " ").trim().take(40)
+    fun ignoreList(ctx: Context): Set<String> = ctx.getSharedPreferences("bank_map", Context.MODE_PRIVATE).getStringSet("ignore", emptySet()) ?: emptySet()
+    fun ignore(ctx: Context, raw: String) {
+        val k = key(raw).takeIf { it.length >= 8 } ?: return
+        ctx.getSharedPreferences("bank_map", Context.MODE_PRIVATE).edit().putStringSet("ignore", ignoreList(ctx) + k).apply()
+    }
+    fun unignore(ctx: Context, k: String) = ctx.getSharedPreferences("bank_map", Context.MODE_PRIVATE).edit().putStringSet("ignore", ignoreList(ctx) - k).apply()
+    fun ignored(ctx: Context, raw: String): Boolean { val k = key(raw); return ignoreList(ctx).any { k.startsWith(it) || it.startsWith(k.take(20)) } }
 
     /** Журнал последних уведомлений банков (с результатом разбора) — чтобы понять, почему операция не попала. */
     @Synchronized

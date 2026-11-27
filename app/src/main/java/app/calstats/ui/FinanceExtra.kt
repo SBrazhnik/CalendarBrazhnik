@@ -95,6 +95,7 @@ fun LazyListScope.bankInbox(vm: MainViewModel) {
                             if (launch != null) TextButton(onClick = { runCatching { ctx.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }) { Text("Оплатить в банке") }
                             TextButton(onClick = { vm.dropBank(setOf(b.id)); vm.message = "Отмечено как оплаченное. Сама оплата придёт операцией из банка" }) { Text("Оплачено") }
                             TextButton(onClick = { vm.dropBank(setOf(b.id)) }) { Text("Скрыть") }
+                            TextButton(onClick = { vm.spamBank(b) }) { Text("Реклама") }
                         }
                     }
                 }
@@ -139,6 +140,7 @@ fun LazyListScope.bankInbox(vm: MainViewModel) {
                         Text((if (t.income) "+" else "−") + money(t.amount), color = if (t.income) INC else EXP, fontWeight = FontWeight.SemiBold)
                         TextButton(onClick = { vm.acceptBank(setOf(t.id)) }) { Text("✓") }
                         TextButton(onClick = { vm.dropBank(setOf(t.id)) }) { Text("✕") }
+                        TextButton(onClick = { vm.spamBank(t) }) { Text("🚫") }
                     }
                 }
             }
@@ -343,6 +345,22 @@ fun BanksScreen(vm: MainViewModel, onImport: () -> Unit, onDismiss: () -> Unit) 
                                     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
                                 }
                                 if (log.any { it.third.second == "не распознано" }) Text("Нераспознанные пришлите через «Доработку» — добавлю такой формат.", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    item {
+                        var ign by remember(vm.bankPending) { mutableStateOf(BankQueue.ignoreList(ctx).toList()) }
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Реклама и лишнее", style = MaterialTheme.typography.titleSmall)
+                                Text("Акции банков («плати 50 ₽ — получи 500 ₽», «кешбэк до 30%») отсеиваются сами. Если что-то всё же попало — нажмите 🚫 у операции в «Финансах», и похожие уведомления больше не придут.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                ign.forEach { k ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("🚫 $k…", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        TextButton(onClick = { BankQueue.unignore(ctx, k); ign = BankQueue.ignoreList(ctx).toList() }) { Text("вернуть") }
+                                    }
+                                }
                             }
                         }
                     }

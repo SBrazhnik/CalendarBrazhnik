@@ -113,3 +113,15 @@ class BankKindsTest {
         org.junit.Assert.assertEquals(50000L, r.amount)
     }
 }
+
+class BankAdsTest {
+    private fun p(s: String) = app.calstats.work.BankNotify.parse("com.idamob.tinkoff.android", null, s, "2026-11-27", "a")
+    @org.junit.Test fun adsIgnored() {
+        org.junit.Assert.assertNull(p("Плати 50 рублей — получи 500 ₽ на счёт!"))
+        org.junit.Assert.assertNull(p("Оформите кредитку и получите кешбэк до 30% и 1000 ₽ в подарок"))
+    }
+    @org.junit.Test fun realStillWorks() {
+        org.junit.Assert.assertNotNull(p("Покупка 350 ₽, карта *1234. Пятёрочка. Доступно 12 000 ₽"))
+        org.junit.Assert.assertNotNull(p("Пополнение +5 000 ₽. Баланс 20 000 ₽"))
+    }
+}

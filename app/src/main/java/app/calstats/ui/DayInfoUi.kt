@@ -121,7 +121,8 @@ object DayInfoSync {
     }
 }
 
-private fun money(v: Double) = "%,.2f".format(v).replace(',', ' ').replace('.', ',')
+/** 81,23 · 1 234,50 — рубли и копейки через запятую, тысячи через пробел (не зависит от языка телефона). */
+private fun money(v: Double) = String.format(java.util.Locale.US, "%,.2f", v).replace(",", "\u00A0").replace('.', ',')
 
 /** Карточка дня в календаре: погода и курс доллара. Нажатие — история. */
 @Composable
