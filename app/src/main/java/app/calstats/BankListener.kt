@@ -26,7 +26,7 @@ class BankListener : NotificationListenerService() {
         val bank = BankNotify.BANKS[pkg]
             ?: (if (pkg in BankNotify.MESSAGING) BankNotify.smsBank(title) else null)
             ?: runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrNull()
-                ?.takeIf { pkg !in BankNotify.MESSAGING && Regex("(?iu)банк|bank").containsMatchIn(it) }
+                ?.takeIf { pkg !in BankNotify.MESSAGING && Regex("(?iu)банк|bank|альфа|alfa|сбер|sber|тинькофф|tinkoff|т-банк|втб|vtb|газпром|райф|совком|халва|открытие|ozon|озон|мтс.?деньги|юmoney|yoomoney|псб|почта|росбанк|уралсиб|мкб|россельхоз|кошел[её]к|wallet|сбп|mir.?pay|pay$").containsMatchIn(it) }
             ?: return
         val text = (ex.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: ex.getCharSequence(Notification.EXTRA_TEXT))?.toString()
         val date = Instant.ofEpochMilli(sbn.postTime).atZone(ZoneId.systemDefault()).toLocalDate().toString()
